@@ -17,8 +17,7 @@ export interface LoginResponse {
   };
 }
 
-const API_BASE =
-  import.meta.env.VITE_API_URL ?? "http://localhost:5000/api/v1";
+const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5000/api/v1";
 
 export function getToken(): string | null {
   return localStorage.getItem("token");
@@ -45,13 +44,8 @@ export function clearSession() {
 }
 
 export const authApi = {
-<<<<<<< HEAD
   loginWithGoogle: async (credential: string): Promise<LoginResponse> => {
-    const res = await fetch(`${BACKEND_URL}/auth/login`, {
-=======
-  loginWithGoogle: async (credential: string): Promise<LoginResponse["data"]> => {
     const res = await fetch(`${API_BASE}/auth/login`, {
->>>>>>> e8ebe3daed3e9f26b21007d17435d0a737552924
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token: credential }),

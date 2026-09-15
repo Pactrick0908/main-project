@@ -6,6 +6,8 @@ import MainLayout from "@/layouts/client/MainLayout";
 import LoginLayout from "@/layouts/auth/LoginLayout";
 import MarketplacePage from "@/pages/client/market/MarketplacePage";
 import AdminLayout from "@/layouts/admin/AdminLayout";
+import MyTicketsPage from "@/pages/client/ticket/MyTicketsPage";
+import ScannerPage from "@/pages/admin/ScannerPage";
 
 export const router = createBrowserRouter([
   {
@@ -17,17 +19,17 @@ export const router = createBrowserRouter([
         element: <HomePage />,
       },
       {
-        path: "/my-tickets",
+        path: "my-tickets",
         element: <MyTicketsPage />,
       },
       {
-        path: "/marketplace",
+        path: "marketplace",
         element: <MarketplacePage />,
       },
     ],
   },
   {
-    path: "/login",
+    path: "login",
     element: <LoginLayout />,
     children: [
       {
@@ -37,7 +39,7 @@ export const router = createBrowserRouter([
     ],
   },
   {
-    path: "/admin",
+    path: "admin",
     element: <AdminLayout />,
     children: [
       {
@@ -45,7 +47,7 @@ export const router = createBrowserRouter([
         element: <AdminPage />,
       },
       {
-        path: "/scanner",
+        path: "scanner",
         element: <ScannerPage />,
       },
     ],

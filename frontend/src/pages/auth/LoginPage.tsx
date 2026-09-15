@@ -1,12 +1,8 @@
 import { useState } from "react";
 import { Ticket } from "lucide-react";
-<<<<<<< HEAD:frontend/src/pages/auth/LoginPage.tsx
-import Login from "@/components/layout/auth/Login";
-=======
 import { useNavigate } from "react-router-dom";
-import Login from "../components/Login";
-import { authApi, saveSession } from "../api/auth.api";
->>>>>>> e8ebe3daed3e9f26b21007d17435d0a737552924:frontend/src/pages/LoginPage.tsx
+import Login from "@/components/Login";
+import { authApi, saveSession } from "@/api/auth.api";
 
 function LoginPage() {
   const navigate = useNavigate();
