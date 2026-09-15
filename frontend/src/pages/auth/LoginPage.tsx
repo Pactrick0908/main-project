@@ -1,5 +1,5 @@
 import { Ticket } from "lucide-react";
-import Login from "../components/Login";
+import Login from "@/components/layout/auth/Login";
 
 function LoginPage() {
   return (

@@ -13,7 +13,7 @@ const BACKEND_URL = "http://localhost:5000/api/v1";
 
 export const authApi = {
   loginWithGoogle: async (credential: string): Promise<LoginResponse> => {
-    const res = await fetch(`${BACKEND_URL}/auth/google`, {
+    const res = await fetch(`${BACKEND_URL}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token: credential }),
