@@ -18,6 +18,7 @@ model User {
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
 
   organizedEvents Event[]
+  tickets         Ticket[]
 
   @@map("users")
 }
@@ -107,16 +108,41 @@ model EventZone {
 }
 
 model Ticket {
-  id          Int     @id @default(autoincrement())
-  eventId     Int     @map("event_id")
-  seatId      Int?    @map("seat_id")
-  eventZoneId Int     @map("event_zone_id")
-  status      String? @default("available") @db.VarChar(50)
-  userId      String? @map("user_id") @db.Uuid
+  id           Int       @id @default(autoincrement())
+  eventId      Int       @map("event_id")
+  seatId       Int?      @map("seat_id")
+  eventZoneId  Int       @map("event_zone_id")
+  status       String?   @default("available") @db.VarChar(50)
+  userId       Int?      @map("user_id")
+  ownerWallet  String?   @map("owner_wallet") @db.VarChar(100)
+  mintAddress  String?   @map("mint_address") @db.VarChar(100)
+  checkedInAt  DateTime? @map("checked_in_at") @db.Timestamp(6)
+  checkedInBy  String?   @map("checked_in_by") @db.VarChar(100)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
 
-  event     Event     @relation(fields: [eventId], references: [id], onDelete: Restrict)
-  seat      Seat?     @relation(fields: [seatId], references: [id], onDelete: Restrict)
-  eventZone EventZone @relation(fields: [eventZoneId], references: [id], onDelete: Restrict)
+  event     Event         @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  seat      Seat?         @relation(fields: [seatId], references: [id], onDelete: Restrict)
+  eventZone EventZone     @relation(fields: [eventZoneId], references: [id], onDelete: Restrict)
+  user      User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  nonces    TicketNonce[]
 
+  @@index([ownerWallet])
+  @@index([userId])
   @@map("tickets")
+}
+
+/// Nonce phiên cho Dynamic QR — TTL tối đa 60s, one-time use
+model TicketNonce {
+  id        String    @id @default(cuid())
+  ticketId  Int       @map("ticket_id")
+  nonce     String    @unique @db.VarChar(64)
+  expiresAt DateTime  @map("expires_at") @db.Timestamp(6)
+  usedAt    DateTime? @map("used_at") @db.Timestamp(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([expiresAt])
+  @@map("ticket_nonces")
 }

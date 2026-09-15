@@ -1,7 +1,29 @@
+import { useState } from "react";
 import { Ticket } from "lucide-react";
+<<<<<<< HEAD:frontend/src/pages/auth/LoginPage.tsx
 import Login from "@/components/layout/auth/Login";
+=======
+import { useNavigate } from "react-router-dom";
+import Login from "../components/Login";
+import { authApi, saveSession } from "../api/auth.api";
+>>>>>>> e8ebe3daed3e9f26b21007d17435d0a737552924:frontend/src/pages/LoginPage.tsx
 
 function LoginPage() {
+  const navigate = useNavigate();
+  const [demoBusy, setDemoBusy] = useState(false);
+
+  const handleDemoLogin = async () => {
+    setDemoBusy(true);
+    try {
+      const data = await authApi.loginDemo();
+      saveSession(data.token, data.user);
+      navigate("/my-tickets", { replace: true });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Đăng nhập demo thất bại");
+    } finally {
+      setDemoBusy(false);
+    }
+  };
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-4">
       {/* NỀN TRANG TRÍ */}
@@ -30,10 +52,17 @@ function LoginPage() {
           </div>
 
           <div className="space-y-4">
-            {/* Nút Google Official */}
             <div className="flex justify-center">
               <Login />
             </div>
+            <button
+              type="button"
+              onClick={() => void handleDemoLogin()}
+              disabled={demoBusy}
+              className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+            >
+              {demoBusy ? "Đang vào…" : "Vào thử (không cần Google)"}
+            </button>
           </div>
 
           <p className="text-xs text-center text-slate-400 mt-6 leading-relaxed">
