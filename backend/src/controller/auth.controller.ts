@@ -33,3 +33,20 @@ export const login = async (req: Request, res: Response) => {
       .json({ success: false, message: "Lỗi Server khi đăng nhập" });
   }
 };
+
+export const loginDemo = async (_req: Request, res: Response) => {
+  try {
+    const result = await AuthService.loginDemo();
+    return res.status(200).json({
+      success: true,
+      message: "Đăng nhập demo thành công!",
+      data: result,
+    });
+  } catch (error: any) {
+    console.error("Demo login error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error?.message ?? "Không đăng nhập demo được. Kiểm tra kết nối database.",
+    });
+  }
+};

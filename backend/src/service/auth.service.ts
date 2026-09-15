@@ -38,17 +38,32 @@ export class AuthService {
       googleId: user.googleId,
       email: user.email,
       walletAddress: user.walletAddress,
+      role: user.role ?? "customer",
+      userId: user.id,
     });
 
     return {
       token,
       user: {
+        id: user.id,
         googleId: user.googleId,
         name: user.fullName,
         email: user.email,
         avatar: user.avatarUrl,
         walletAddress: user.walletAddress,
+        role: user.role ?? "customer",
       },
     };
+  }
+
+  /** Tài khoản thử nghiệm — không cần Google, để test Dynamic QR. */
+  static async loginDemo() {
+    return AuthService.login({
+      sub: "demo-guest",
+      email: "demo@ticket.local",
+      email_verified: true,
+      name: "Khách Demo",
+      picture: "",
+    });
   }
 }

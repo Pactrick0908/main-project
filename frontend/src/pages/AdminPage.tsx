@@ -222,7 +222,7 @@ export default function AdminPage() {
               target="_blank"
               className="px-4 py-2 rounded-xl bg-purple-600 text-white text-xs font-bold shadow hover:bg-purple-700"
             >
-              📷 Trạm Soát Vé QR 30s
+              📷 Trạm Soát Vé QR 60s
             </a>
           </div>
         </header>
