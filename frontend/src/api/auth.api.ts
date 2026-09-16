@@ -76,4 +76,7 @@ export const authApi = {
 
   /** Đăng nhập demo — không cần Google */
   loginDemo: () => post<AuthSession>("/auth/demo"),
+
+  /** Đăng nhập admin demo */
+  loginAdminDemo: () => post<AuthSession>("/auth/admin-demo"),
 };

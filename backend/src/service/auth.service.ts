@@ -97,4 +97,70 @@ export class AuthService {
       picture: "",
     });
   }
+
+  /** Đăng nhập admin demo — tự gắn role admin. */
+  static async loginAdminDemo() {
+    const adminRoleId = await this.getDefaultRoleId("admin");
+    await this.getDefaultRoleId("customer");
+    await this.getDefaultRoleId("scanner");
+
+    if (!adminRoleId) {
+      throw new Error("Không tạo được role admin");
+    }
+
+    const wallet = WalletService.createWalletFromGoogle("demo-admin");
+    const walletAddress = wallet.publicKey.toBase58();
+
+    const existing = await prisma.user.findFirst({
+      where: {
+        OR: [{ googleId: "demo-admin" }, { email: "admin@ticket.local" }],
+      },
+    });
+
+    const user = existing
+      ? await prisma.user.update({
+          where: { id: existing.id },
+          data: {
+            fullName: "Admin Ticket3",
+            email: "admin@ticket.local",
+            walletAddress,
+            avatarUrl: "",
+            roleId: adminRoleId,
+          },
+          include: { role: true },
+        })
+      : await prisma.user.create({
+          data: {
+            googleId: "demo-admin",
+            fullName: "Admin Ticket3",
+            email: "admin@ticket.local",
+            walletAddress,
+            avatarUrl: "",
+            roleId: adminRoleId,
+          },
+          include: { role: true },
+        });
+
+    const roleName = user.role?.name ?? "admin";
+    const token = await generateToken({
+      googleId: user.googleId,
+      email: user.email,
+      walletAddress: user.walletAddress,
+      role: roleName,
+      userId: user.id,
+    });
+
+    return {
+      token,
+      user: {
+        id: user.id,
+        googleId: user.googleId,
+        name: user.fullName,
+        email: user.email,
+        avatar: user.avatarUrl,
+        walletAddress: user.walletAddress,
+        role: roleName,
+      },
+    };
+  }
 }
