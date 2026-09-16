@@ -54,6 +54,13 @@ export const ticketApi = {
   listMine: () =>
     api<{ success: boolean; data: { tickets: TicketDto[] } }>("/tickets/mine"),
 
+  listAll: () =>
+    api<{ success: boolean; data: { tickets: TicketDto[] } }>(
+      "/tickets",
+      {},
+      false,
+    ),
+
   issueDemo: () =>
     api<{ success: boolean; data: { ticket: TicketDto } }>(
       "/tickets/issue-demo",

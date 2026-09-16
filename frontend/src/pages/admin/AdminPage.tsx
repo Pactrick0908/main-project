@@ -1,23 +1,31 @@
-'use client';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import {
+  Plus,
+  RefreshCw,
+  Trash2,
+  ExternalLink,
+  TrendingUp,
+  Ticket,
+  UserCheck,
+  CalendarDays,
+  MapPin,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { ticketApi, type TicketDto } from "@/api/ticket.api";
+import { cn } from "cn";
 
-import React, { useState, useEffect } from 'react';
-
-// ==========================================
-// TYPES & INTERFACES
-// ==========================================
-
-export type TabType = 'dashboard' | 'events' | 'tickets';
-
-export interface RealTicketItem {
-  id: string;
-  tx_hash: string;
-  event_name: string;
-  is_checked_in: boolean;
-  buyer_wallet?: string;
-  time: string;
-  explorer_url: string;
-  price_vnd?: number;
-}
+export type TabType = "dashboard" | "events" | "tickets";
 
 export interface EventItem {
   id: string;
@@ -28,444 +36,683 @@ export interface EventItem {
   totalTickets: number;
   soldTickets: number;
   posterUrl: string;
-  status: 'active' | 'upcoming' | 'ended';
+  status: "active" | "upcoming" | "ended";
   merkleTreeAddress: string;
 }
 
-const formatVND = (amount: number) => {
-  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+const formatVND = (amount: number) =>
+  new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(
+    amount,
+  );
+
+const STATUS_LABEL: Record<EventItem["status"], string> = {
+  active: "Đang mở bán",
+  upcoming: "Sắp diễn ra",
+  ended: "Đã kết thúc",
 };
 
+function StatusBadge({ status }: { status: EventItem["status"] }) {
+  return (
+    <Badge
+      variant="secondary"
+      className={cn(
+        "rounded-md",
+        status === "active" && "bg-success/15 text-success",
+        status === "upcoming" && "bg-sky-500/15 text-sky-400",
+        status === "ended" && "bg-muted text-muted-foreground",
+      )}
+    >
+      {STATUS_LABEL[status]}
+    </Badge>
+  );
+}
+
 export default function AdminPage() {
-  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
-  const [tickets, setTickets] = useState<RealTicketItem[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [lastUpdated, setLastUpdated] = useState<string>('');
+  const [params, setParams] = useSearchParams();
+  const activeTab = (params.get("tab") as TabType) || "dashboard";
+
+  const setTab = (tab: TabType) => {
+    if (tab === "dashboard") setParams({});
+    else setParams({ tab });
+  };
+
+  const [tickets, setTickets] = useState<TicketDto[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const [events, setEvents] = useState<EventItem[]>([
     {
-      id: 'EVT-001',
-      name: 'Đêm Nhạc Indie 2025',
-      location: 'Sân vận động Mỹ Đình, Hà Nội',
-      date: '26/08/2026',
+      id: "EVT-001",
+      name: "Đêm Nhạc Indie 2026 (Solana Live)",
+      location: "Sân vận động Mỹ Đình, Hà Nội",
+      date: "26/08/2026",
       priceVnd: 1500000,
       totalTickets: 100,
       soldTickets: 5,
-      posterUrl: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=800&q=80',
-      status: 'active',
-      merkleTreeAddress: 'GGadYLQQ5S2r26ajUHEiy7v2NMKN41rJXETb395kbq1H',
+      posterUrl:
+        "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=800&q=80",
+      status: "active",
+      merkleTreeAddress: "GGadYLQQ5S2r26ajUHEiy7v2NMKN41rJXETb395kbq1H",
     },
     {
-      id: 'EVT-002',
-      name: 'Rap Việt All-Star Concert 2026',
-      location: 'SECC, Q.7, TP. HCM',
-      date: '15/11/2026',
+      id: "EVT-002",
+      name: "Rap Việt All-Star Concert 2026",
+      location: "SECC, Q.7, TP. HCM",
+      date: "15/11/2026",
       priceVnd: 2200000,
       totalTickets: 1500,
       soldTickets: 980,
-      posterUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=800&q=80',
-      status: 'upcoming',
-      merkleTreeAddress: 'GGadYLQQ5S2r26ajUHEiy7v2NMKN41rJXETb395kbq1H',
+      posterUrl:
+        "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=800&q=80",
+      status: "upcoming",
+      merkleTreeAddress: "GGadYLQQ5S2r26ajUHEiy7v2NMKN41rJXETb395kbq1H",
     },
   ]);
 
-  // Form State
   const [newEvent, setNewEvent] = useState({
-    name: '',
-    location: '',
-    date: '',
-    priceVnd: '',
-    totalTickets: '',
-    posterUrl: '',
+    name: "",
+    location: "",
+    date: "",
+    priceVnd: "",
+    totalTickets: "",
+    posterUrl: "",
   });
-
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const fetchRealTicketsData = async (isInitial = false) => {
-    if (isInitial) setIsLoading(true);
+  const fetchTickets = useCallback(async (initial = false) => {
+    if (initial) setIsLoading(true);
     try {
-      const res = await fetch('/api/tickets');
-      if (!res.ok) throw new Error('Failed to fetch ticket data');
-      const data = await res.json();
-      setTickets(data.tickets || []);
-      setLastUpdated(new Date().toLocaleTimeString('vi-VN'));
+      const res = await Promise.race([
+        ticketApi.listAll(),
+        new Promise<never>((_, reject) =>
+          window.setTimeout(() => reject(new Error("timeout")), 5000),
+        ),
+      ]);
+      setTickets(res.data.tickets);
+      setLastUpdated(new Date().toLocaleTimeString("vi-VN"));
     } catch (err) {
-      console.error('Error fetching tickets:', err);
+      console.error("Error fetching tickets:", err);
     } finally {
-      if (isInitial) setIsLoading(false);
+      setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchRealTicketsData(true);
-    const intervalId = setInterval(() => {
-      fetchRealTicketsData(false);
-    }, 10000);
-    return () => clearInterval(intervalId);
-  }, []);
+    void fetchTickets(true);
+    const id = window.setInterval(() => void fetchTickets(false), 15000);
+    return () => window.clearInterval(id);
+  }, [fetchTickets]);
 
   const handleCreateEvent = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEvent.name || !newEvent.priceVnd || !newEvent.totalTickets) return;
-
     setIsSubmitting(true);
-
-    setTimeout(() => {
-      const created: EventItem = {
-        id: `EVT-${Math.floor(100 + Math.random() * 900)}`,
-        name: newEvent.name,
-        location: newEvent.location || 'Địa điểm TBD',
-        date: newEvent.date || 'TBD',
-        priceVnd: Number(newEvent.priceVnd),
-        totalTickets: Number(newEvent.totalTickets),
-        soldTickets: 0,
-        posterUrl: newEvent.posterUrl || 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80',
-        status: 'active',
-        merkleTreeAddress: 'GGadYLQQ5S2r26ajUHEiy7v2NMKN41rJXETb395kbq1H',
-      };
-
-      setEvents([created, ...events]);
-      setNewEvent({ name: '', location: '', date: '', priceVnd: '', totalTickets: '', posterUrl: '' });
+    window.setTimeout(() => {
+      setEvents((prev) => [
+        {
+          id: `EVT-${Math.floor(100 + Math.random() * 900)}`,
+          name: newEvent.name,
+          location: newEvent.location || "Địa điểm TBD",
+          date: newEvent.date || "TBD",
+          priceVnd: Number(newEvent.priceVnd),
+          totalTickets: Number(newEvent.totalTickets),
+          soldTickets: 0,
+          posterUrl:
+            newEvent.posterUrl ||
+            "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80",
+          status: "active",
+          merkleTreeAddress: "GGadYLQQ5S2r26ajUHEiy7v2NMKN41rJXETb395kbq1H",
+        },
+        ...prev,
+      ]);
+      setNewEvent({
+        name: "",
+        location: "",
+        date: "",
+        priceVnd: "",
+        totalTickets: "",
+        posterUrl: "",
+      });
       setIsSubmitting(false);
-      alert('Tạo sự kiện thành công & Đã đăng ký với Program ID GGadYLQQ...bq1H!');
-    }, 400);
+    }, 350);
   };
 
   const handleDeleteEvent = (eventId: string, eventName: string) => {
-    if (confirm(`Bạn có chắc chắn muốn xóa sự kiện "${eventName}"?`)) {
-      setEvents(events.filter((evt) => evt.id !== eventId));
+    if (confirm(`Xóa sự kiện "${eventName}"?`)) {
+      setEvents((prev) => prev.filter((evt) => evt.id !== eventId));
     }
   };
 
-  const handleEventStatusChange = (eventId: string, newStatus: 'active' | 'upcoming' | 'ended') => {
-    setEvents(events.map((evt) => (evt.id === eventId ? { ...evt, status: newStatus } : evt)));
-  };
-
-  const handleQuickCheckIn = (txHash: string) => {
-    setTickets((prev) =>
-      prev.map((t) => (t.tx_hash === txHash ? { ...t, is_checked_in: true } : t))
+  const handleEventStatusChange = (
+    eventId: string,
+    newStatus: EventItem["status"],
+  ) => {
+    setEvents((prev) =>
+      prev.map((evt) =>
+        evt.id === eventId ? { ...evt, status: newStatus } : evt,
+      ),
     );
   };
 
-  const totalTicketsSold = tickets.length;
-  const checkedInCount = tickets.filter((t) => t.is_checked_in).length;
-  const totalRevenue = tickets.reduce((acc, t) => acc + (t.price_vnd || 1500000), 0);
+  const handleQuickCheckIn = async (ticketId: number) => {
+    // Local optimistic for admin emergency check-in display
+    setTickets((prev) =>
+      prev.map((t) =>
+        t.id === ticketId
+          ? {
+              ...t,
+              isCheckedIn: true,
+              checkedInAt: new Date().toISOString(),
+              status: "checked_in",
+            }
+          : t,
+      ),
+    );
+  };
+
+  const checkedInCount = tickets.filter((t) => t.isCheckedIn).length;
+  const totalRevenue = tickets.reduce((acc, t) => acc + (t.price || 0), 0);
+  const checkInRate =
+    tickets.length > 0 ? Math.round((checkedInCount / tickets.length) * 100) : 0;
+
+  const filteredTickets = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return tickets;
+    return tickets.filter(
+      (t) =>
+        String(t.id).includes(q) ||
+        t.event.title.toLowerCase().includes(q) ||
+        t.ownerWallet?.toLowerCase().includes(q) ||
+        t.ownerName?.toLowerCase().includes(q) ||
+        t.ownerEmail?.toLowerCase().includes(q),
+    );
+  }, [tickets, searchQuery]);
+
+  const titles: Record<TabType, { title: string; desc: string }> = {
+    dashboard: {
+      title: "Tổng quan",
+      desc: "Doanh thu, vé bán và tỷ lệ check-in theo thời gian thực",
+    },
+    events: {
+      title: "Sự kiện",
+      desc: "Tạo chương trình mới và quản lý trạng thái on-chain",
+    },
+    tickets: {
+      title: "Vé đã bán",
+      desc: "Danh sách vé, check-in thủ công và tra cứu ví",
+    },
+  };
 
   return (
-    <div className="flex h-screen bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden">
-      <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col justify-between shadow-xl flex-shrink-0">
-        <div>
-          <div className="p-6 border-b border-slate-800 flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-purple-600 flex items-center justify-center text-white font-bold text-xl shadow-lg">
-              T3
+    <div className="flex min-h-screen flex-col">
+      <header className="sticky top-0 z-10 border-b border-border bg-background/85 px-6 backdrop-blur-md sm:px-8">
+        <div className="flex h-14 items-center justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2.5">
+              <h1 className="text-base font-semibold tracking-tight whitespace-nowrap">
+                {titles[activeTab].title}
+              </h1>
+              {lastUpdated && (
+                <span className="hidden rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground tabular-nums lg:inline">
+                  Live · {lastUpdated}
+                </span>
+              )}
             </div>
-            <div>
-              <h1 className="font-extrabold text-white text-lg tracking-wide">TicketFest</h1>
-              <div className="text-xs text-purple-400 font-medium">Hệ thống quản lý vé</div>
-            </div>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {titles[activeTab].desc}
+            </p>
           </div>
 
-          <nav className="p-4 space-y-1.5">
-            <button
-              onClick={() => setActiveTab('dashboard')}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-semibold ${
-                activeTab === 'dashboard' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:bg-slate-800'
-              }`}
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => void fetchTickets(false)}
+              title="Làm mới dữ liệu"
             >
-              <span>Dashboard</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('events')}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-semibold ${
-                activeTab === 'events' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:bg-slate-800'
-              }`}
-            >
-              <span>Quản lý Sự kiện ({events.length})</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('tickets')}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-semibold ${
-                activeTab === 'tickets' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:bg-slate-800'
-              }`}
-            >
-              <span>Vé đã bán ({tickets.length})</span>
-            </button>
-          </nav>
-        </div>
-
-        <div className="p-4 m-4 bg-slate-800/60 rounded-xl border border-slate-800 text-xs">
-          <div className="text-slate-400 mb-1">Trạng thái hệ thống</div>
-          <div className="font-semibold text-emerald-400 flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-emerald-400"></span>
-            Máy chủ hoạt động bình thường
-          </div>
-        </div>
-      </aside>
-
-      <div className="flex-1 flex flex-col overflow-y-auto">
-        <header className="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between sticky top-0 z-10">
-          <div className="flex items-center gap-2">
-            <h2 className="text-xl font-bold text-slate-900">Admin Dashboard</h2>
-            {lastUpdated && (
-              <span className="text-xs text-slate-400 font-medium">({lastUpdated})</span>
+              <RefreshCw className="size-3.5" />
+            </Button>
+            {activeTab !== "events" && (
+              <Button size="sm" onClick={() => setTab("events")}>
+                <Plus className="size-3.5" />
+                <span className="hidden sm:inline">Thêm sự kiện</span>
+              </Button>
             )}
           </div>
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={() => setActiveTab('events')}
-              className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold shadow hover:bg-emerald-700 flex items-center gap-1"
-            >
-              <span>+</span> Thêm Sự Kiện Mới
-            </button>
-            <a
-              href="/admin/scanner"
-              target="_blank"
-              className="px-4 py-2 rounded-xl bg-purple-600 text-white text-xs font-bold shadow hover:bg-purple-700"
-            >
-              📷 Trạm Soát Vé QR 60s
-            </a>
+        </div>
+      </header>
+
+      <main className="flex-1 space-y-6 p-6 sm:p-8">
+        {isLoading && (
+          <div className="rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+            Đang đồng bộ dữ liệu vé…
           </div>
-        </header>
+        )}
 
-        <main className="p-8 space-y-8 flex-1">
-          {isLoading && (
-            <div className="bg-purple-50 border border-purple-200 text-purple-800 px-6 py-4 rounded-2xl">
-              Đang tải dữ liệu hệ thống vé...
+        {activeTab === "dashboard" && (
+          <div className="space-y-6">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {[
+                {
+                  label: "Doanh thu",
+                  value: formatVND(totalRevenue),
+                  icon: <TrendingUp className="size-4 text-primary" />,
+                },
+                {
+                  label: "Vé đã bán",
+                  value: `${tickets.length}`,
+                  icon: <Ticket className="size-4 text-primary" />,
+                },
+                {
+                  label: "Đã check-in",
+                  value: `${checkedInCount} / ${tickets.length}`,
+                  icon: <UserCheck className="size-4 text-success" />,
+                },
+                {
+                  label: "Sự kiện",
+                  value: `${events.length}`,
+                  icon: <CalendarDays className="size-4 text-primary" />,
+                },
+              ].map((stat) => (
+                <Card key={stat.label} className="gap-3">
+                  <CardHeader className="flex flex-row items-center justify-between pb-0">
+                    <CardDescription className="text-[11px] font-semibold uppercase tracking-wider">
+                      {stat.label}
+                    </CardDescription>
+                    <div className="rounded-md bg-muted p-1.5">{stat.icon}</div>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-2xl font-semibold tracking-tight">
+                      {stat.value}
+                    </p>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
-          )}
 
-          {!isLoading && activeTab === 'dashboard' && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="bg-white p-6 rounded-2xl border shadow-sm">
-                  <span className="text-xs font-bold text-slate-400 uppercase">Tổng doanh thu</span>
-                  <div className="mt-4 text-2xl font-extrabold text-slate-900">{formatVND(totalRevenue)}</div>
-                </div>
-                <div className="bg-white p-6 rounded-2xl border shadow-sm">
-                  <span className="text-xs font-bold text-slate-400 uppercase">Tổng vé đã bán</span>
-                  <div className="mt-4 text-2xl font-extrabold text-slate-900">{totalTicketsSold} vé</div>
-                </div>
-                <div className="bg-white p-6 rounded-2xl border shadow-sm">
-                  <span className="text-xs font-bold text-slate-400 uppercase">Đã Check-in</span>
-                  <div className="mt-4 text-2xl font-extrabold text-slate-900">{checkedInCount} / {totalTicketsSold}</div>
-                </div>
-                <div className="bg-white p-6 rounded-2xl border shadow-sm">
-                  <span className="text-xs font-bold text-slate-400 uppercase">Sự kiện hoạt động</span>
-                  <div className="mt-4 text-2xl font-extrabold text-slate-900">{events.length} Sự kiện</div>
-                </div>
-              </div>
-
-              <div className="bg-slate-900 p-6 rounded-2xl text-white flex items-center justify-between shadow-lg">
-                <div>
-                  <h3 className="text-lg font-bold">Thêm sự kiện / chương trình mới</h3>
-                  <p className="text-xs text-slate-400 mt-1">Đăng ký sự kiện mới và thiết lập hệ thống vé</p>
-                </div>
-                <button
-                  onClick={() => setActiveTab('events')}
-                  className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs shadow"
-                >
-                  + Thêm Sự Kiện Mới Ngay
-                </button>
-              </div>
-            </div>
-          )}
-
-          {!isLoading && activeTab === 'events' && (
-            <div className="space-y-8">
-              {/* FORM THÊM SỰ KIỆN MỚI NỔI BẬT */}
-              <div className="bg-white rounded-2xl border border-purple-200 shadow-md p-6 border-t-4 border-t-purple-600">
-                <div className="border-b border-slate-100 pb-3 mb-6">
-                  <h3 className="text-base font-extrabold text-slate-900 flex items-center">
-                    <span className="w-3 h-3 rounded-full bg-emerald-500 mr-2"></span>
-                    THÊM SỰ KIỆN / CHƯƠNG TRÌNH MỚI
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Nhập thông tin bên dưới để khởi tạo chương trình mới và phát hành vé tự động.
-                  </p>
-                </div>
-
-                <form onSubmit={handleCreateEvent} className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase mb-2">
-                      Tên sự kiện <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Ví dụ: Concert Anh Trai Vượt Ngàn Chông Gai 2026"
-                      value={newEvent.name}
-                      onChange={(e) => setNewEvent({ ...newEvent, name: e.target.value })}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-600"
+            <div className="grid gap-4 lg:grid-cols-5">
+              <Card className="lg:col-span-3">
+                <CardHeader className="border-b border-border">
+                  <CardTitle>Tỷ lệ check-in</CardTitle>
+                  <CardDescription>
+                    {checkedInCount} vé đã vào cổng · {checkInRate}% tổng vé
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <div className="h-2.5 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-success transition-all duration-500"
+                      style={{ width: `${checkInRate}%` }}
                     />
                   </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase mb-2">
-                      Địa điểm & Thời gian
-                    </label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <input
-                        type="text"
-                        placeholder="Sân vận động Mỹ Đình"
-                        value={newEvent.location}
-                        onChange={(e) => setNewEvent({ ...newEvent, location: e.target.value })}
-                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-600"
-                      />
-                      <input
-                        type="text"
-                        placeholder="26/08/2026"
-                        value={newEvent.date}
-                        onChange={(e) => setNewEvent({ ...newEvent, date: e.target.value })}
-                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-600"
-                      />
-                    </div>
+                  <div className="mt-6 space-y-3">
+                    {tickets.slice(0, 5).map((t) => (
+                      <div
+                        key={t.id}
+                        className="flex items-center justify-between gap-3 text-sm"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate font-medium">
+                            {t.ownerName ?? t.ownerEmail ?? `Vé #${t.id}`}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {t.event.title}
+                          </p>
+                        </div>
+                        <Badge
+                          variant="secondary"
+                          className={cn(
+                            "rounded-md shrink-0",
+                            t.isCheckedIn
+                              ? "bg-success/15 text-success"
+                              : "bg-amber-500/15 text-amber-400",
+                          )}
+                        >
+                          {t.isCheckedIn ? "Đã vào" : "Chưa vào"}
+                        </Badge>
+                      </div>
+                    ))}
+                    {tickets.length === 0 && (
+                      <p className="text-sm text-muted-foreground">
+                        Chưa có vé nào. Tạo vé demo từ trang Vé của tôi.
+                      </p>
+                    )}
                   </div>
+                </CardContent>
+              </Card>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase mb-2">
-                      Giá vé niêm yết (VNĐ) <span className="text-red-500">*</span>
+              <Card className="lg:col-span-2">
+                <CardHeader className="border-b border-border">
+                  <CardTitle>Sự kiện đang chạy</CardTitle>
+                  <CardDescription>Theo dõi cung cầu vé</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4 pt-4">
+                  {events.map((evt) => {
+                    const soldPct = Math.min(
+                      100,
+                      Math.round((evt.soldTickets / evt.totalTickets) * 100),
+                    );
+                    return (
+                      <div key={evt.id} className="space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">
+                              {evt.name}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {evt.soldTickets}/{evt.totalTickets} vé · {soldPct}%
+                            </p>
+                          </div>
+                          <StatusBadge status={evt.status} />
+                        </div>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="h-full rounded-full bg-primary"
+                            style={{ width: `${soldPct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => setTab("events")}
+                  >
+                    Quản lý sự kiện
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "events" && (
+          <div className="space-y-6">
+            <Card>
+              <CardHeader className="border-b border-border">
+                <CardTitle>Tạo sự kiện mới</CardTitle>
+                <CardDescription>
+                  Khởi tạo chương trình và liên kết Merkle Tree / Program Devnet
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-5">
+                <form
+                  onSubmit={handleCreateEvent}
+                  className="grid gap-4 md:grid-cols-2"
+                >
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Tên sự kiện *
                     </label>
-                    <input
+                    <Input
+                      required
+                      placeholder="Concert Anh Trai Vượt Ngàn Chông Gai 2026"
+                      value={newEvent.name}
+                      onChange={(e) =>
+                        setNewEvent({ ...newEvent, name: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Địa điểm
+                    </label>
+                    <Input
+                      placeholder="SVĐ Mỹ Đình"
+                      value={newEvent.location}
+                      onChange={(e) =>
+                        setNewEvent({ ...newEvent, location: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Ngày diễn ra
+                    </label>
+                    <Input
+                      placeholder="26/08/2026"
+                      value={newEvent.date}
+                      onChange={(e) =>
+                        setNewEvent({ ...newEvent, date: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Giá vé (VNĐ) *
+                    </label>
+                    <Input
                       type="number"
                       required
                       placeholder="1500000"
                       value={newEvent.priceVnd}
-                      onChange={(e) => setNewEvent({ ...newEvent, priceVnd: e.target.value })}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-600"
+                      onChange={(e) =>
+                        setNewEvent({ ...newEvent, priceVnd: e.target.value })
+                      }
                     />
                   </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase mb-2">
-                      Số lượng vé (Total Supply) <span className="text-red-500">*</span>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Tổng cung *
                     </label>
-                    <input
+                    <Input
                       type="number"
                       required
                       placeholder="100"
                       value={newEvent.totalTickets}
-                      onChange={(e) => setNewEvent({ ...newEvent, totalTickets: e.target.value })}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-600"
+                      onChange={(e) =>
+                        setNewEvent({
+                          ...newEvent,
+                          totalTickets: e.target.value,
+                        })
+                      }
                     />
                   </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-xs font-bold text-slate-700 uppercase mb-2">
-                      Link URL ảnh Banner / Poster
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      URL poster
                     </label>
-                    <input
+                    <Input
                       type="url"
-                      placeholder="https://images.unsplash.com/photo-..."
+                      placeholder="https://…"
                       value={newEvent.posterUrl}
-                      onChange={(e) => setNewEvent({ ...newEvent, posterUrl: e.target.value })}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-600"
+                      onChange={(e) =>
+                        setNewEvent({ ...newEvent, posterUrl: e.target.value })
+                      }
                     />
                   </div>
-
                   <div className="md:col-span-2 flex justify-end">
-                    <button
-                      type="submit"
-                      disabled={isSubmitting}
-                      className="px-6 py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-sm shadow-md transition"
-                    >
-                      {isSubmitting ? 'Đang tạo...' : '+ Tạo Sự Kiện Mới Ngay'}
-                    </button>
+                    <Button type="submit" disabled={isSubmitting}>
+                      <Plus className="size-3.5" />
+                      {isSubmitting ? "Đang tạo…" : "Tạo sự kiện"}
+                    </Button>
                   </div>
                 </form>
-              </div>
+              </CardContent>
+            </Card>
 
-              {/* BẢNG DANH SÁCH SỰ KIỆN */}
-              <div className="bg-white rounded-2xl border shadow-sm p-6">
-                <h3 className="text-base font-bold text-slate-900 mb-4">Danh sách Sự kiện đã tạo ({events.length})</h3>
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase">
-                      <th className="p-4">Tên Sự kiện</th>
-                      <th className="p-4">Giá vé</th>
-                      <th className="p-4">Trạng thái</th>
-                      <th className="p-4 text-right">Đổi / Xóa</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y text-sm">
-                    {events.map((evt) => (
-                      <tr key={evt.id}>
-                        <td className="p-4 font-bold text-slate-900">{evt.name}</td>
-                        <td className="p-4 font-semibold">{formatVND(evt.priceVnd)}</td>
-                        <td className="p-4">
-                          {evt.status === 'active' && <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">🟢 Đang diễn ra</span>}
-                          {evt.status === 'upcoming' && <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800">🔵 Sắp diễn ra</span>}
-                          {evt.status === 'ended' && <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-slate-200 text-slate-700">⚪ Đã kết thúc</span>}
-                        </td>
-                        <td className="p-4 text-right space-x-2">
-                          <select
-                            value={evt.status}
-                            onChange={(e) => handleEventStatusChange(evt.id, e.target.value as any)}
-                            className="px-3 py-1.5 rounded-lg border text-xs font-semibold bg-white"
-                          >
-                            <option value="active">🟢 Đang diễn ra</option>
-                            <option value="upcoming">🔵 Sắp diễn ra</option>
-                            <option value="ended">⚪ Đã kết thúc</option>
-                          </select>
-                          <button
-                            onClick={() => handleDeleteEvent(evt.id, evt.name)}
-                            className="px-3 py-1.5 rounded-lg bg-red-100 text-red-700 text-xs font-bold hover:bg-red-600 hover:text-white"
-                          >
-                            Xóa
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              {events.map((evt) => (
+                <Card key={evt.id} className="overflow-hidden p-0 gap-0">
+                  <div className="relative h-36 overflow-hidden">
+                    <img
+                      src={evt.posterUrl}
+                      alt=""
+                      className="size-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-card via-card/40 to-transparent" />
+                    <div className="absolute bottom-3 left-4 right-4 flex items-end justify-between gap-2">
+                      <StatusBadge status={evt.status} />
+                      <span className="font-mono text-[10px] text-muted-foreground">
+                        {evt.id}
+                      </span>
+                    </div>
+                  </div>
+                  <CardContent className="space-y-3 p-4">
+                    <div>
+                      <h3 className="font-medium leading-snug">{evt.name}</h3>
+                      <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <MapPin className="size-3.5 shrink-0" />
+                        {evt.location} · {evt.date}
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Giá niêm yết</span>
+                      <span className="font-semibold text-primary">
+                        {formatVND(evt.priceVnd)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Đã bán</span>
+                      <span>
+                        {evt.soldTickets}/{evt.totalTickets}
+                      </span>
+                    </div>
+                    <Separator />
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={evt.status}
+                        onChange={(e) =>
+                          handleEventStatusChange(
+                            evt.id,
+                            e.target.value as EventItem["status"],
+                          )
+                        }
+                        className="h-8 flex-1 rounded-lg border border-input bg-input/30 px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                      >
+                        <option value="active">Đang mở bán</option>
+                        <option value="upcoming">Sắp diễn ra</option>
+                        <option value="ended">Đã kết thúc</option>
+                      </select>
+                      <Button
+                        variant="destructive"
+                        size="icon-sm"
+                        onClick={() => handleDeleteEvent(evt.id, evt.name)}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
-          )}
+          </div>
+        )}
 
-          {!isLoading && activeTab === 'tickets' && (
-            <div className="bg-white rounded-2xl border shadow-sm p-6 space-y-4">
-              <h3 className="text-base font-bold text-slate-900">Danh sách vé đã phát hành</h3>
-              <table className="w-full text-left border-collapse">
+        {activeTab === "tickets" && (
+          <Card className="gap-0 overflow-hidden p-0">
+            <CardHeader className="border-b border-border py-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <CardTitle>Danh sách vé</CardTitle>
+                  <CardDescription>
+                    {filteredTickets.length} kết quả
+                  </CardDescription>
+                </div>
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Tìm theo tên, email, ví, mã vé…"
+                  className="max-w-xs"
+                />
+              </div>
+            </CardHeader>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] text-left text-sm">
                 <thead>
-                  <tr className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase">
-                    <th className="p-4">Mã vé / Mã giao dịch</th>
-                    <th className="p-4">Sự kiện</th>
-                    <th className="p-4">Trạng thái Check-in</th>
-                    <th className="p-4 text-right">Thao tác</th>
+                  <tr className="border-b border-border bg-muted/40 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    <th className="px-4 py-3">Vé</th>
+                    <th className="px-4 py-3">Khách</th>
+                    <th className="px-4 py-3">Sự kiện</th>
+                    <th className="px-4 py-3">Trạng thái</th>
+                    <th className="px-4 py-3 text-right">Thao tác</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y text-sm">
-                  {tickets.map((t) => (
-                    <tr key={t.tx_hash}>
-                      <td className="p-4 font-mono font-bold text-purple-600">{t.tx_hash.substring(0, 10)}...</td>
-                      <td className="p-4 font-semibold">{t.event_name}</td>
-                      <td className="p-4">
-                        {t.is_checked_in ? (
-                          <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">🟢 Đã vào cổng</span>
-                        ) : (
-                          <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800">🟡 Chưa check-in</span>
-                        )}
+                <tbody className="divide-y divide-border">
+                  {filteredTickets.map((t) => (
+                    <tr
+                      key={t.id}
+                      className="transition-colors hover:bg-muted/30"
+                    >
+                      <td className="px-4 py-3">
+                        <p className="font-medium">#{t.id}</p>
+                        <p className="font-mono text-[11px] text-muted-foreground">
+                          {t.ownerWallet
+                            ? `${t.ownerWallet.slice(0, 4)}…${t.ownerWallet.slice(-4)}`
+                            : "—"}
+                        </p>
                       </td>
-                      <td className="p-4 text-right space-x-2">
-                        {!t.is_checked_in && (
-                          <button
-                            onClick={() => handleQuickCheckIn(t.tx_hash)}
-                            className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 cursor-pointer"
-                          >
-                            ⚡ Check-in Nhanh
-                          </button>
-                        )}
-                        <span className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 font-semibold text-xs border border-slate-200">
-                          Vé hợp lệ
-                        </span>
+                      <td className="px-4 py-3">
+                        <p className="font-medium">
+                          {t.ownerName ?? "—"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {t.ownerEmail ?? t.zoneName}
+                          {t.seatLabel ? ` · ${t.seatLabel}` : ""}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="max-w-[200px] truncate">{t.event.title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatVND(t.price)}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge
+                          variant="secondary"
+                          className={cn(
+                            "rounded-md",
+                            t.isCheckedIn
+                              ? "bg-success/15 text-success"
+                              : "bg-amber-500/15 text-amber-400",
+                          )}
+                        >
+                          {t.isCheckedIn ? "Đã check-in" : "Chưa vào"}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="inline-flex items-center gap-1.5">
+                          {!t.isCheckedIn && (
+                            <Button
+                              size="xs"
+                              onClick={() => void handleQuickCheckIn(t.id)}
+                            >
+                              Check-in
+                            </Button>
+                          )}
+                          {t.mintAddress && !t.mintAddress.startsWith("demo") && (
+                            <a
+                              href={`https://explorer.solana.com/address/${t.mintAddress}?cluster=devnet`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <Button variant="ghost" size="icon-xs">
+                                <ExternalLink className="size-3.5" />
+                              </Button>
+                            </a>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
+                  {filteredTickets.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={5}
+                        className="px-4 py-12 text-center text-muted-foreground"
+                      >
+                        Không có vé phù hợp
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
-          )}
-        </main>
-      </div>
+          </Card>
+        )}
+      </main>
     </div>
   );
 }
