@@ -30,6 +30,27 @@ export const CATEGORIES = [
 ];
 
 export const MARKETPLACE_TICKETS: MarketplaceTicket[] = [
+  // ==================== TEST TICKET (DEMO PAYOS 2.000đ) ====================
+  {
+    id: 9901,
+    eventId: 99,
+    title: "🧪 Vé Thử Nghiệm Thanh Toán PayOS (VietQR 2.000đ)",
+    category: "vpop",
+    artist: "Hệ Thống Kiểm Thử TicketFest",
+    image: "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=800&q=80",
+    date: "Hôm nay · 24/7",
+    location: "Cổng Thanh Toán Trực Tuyến PayOS",
+    seatZone: "Vé Test Thanh Toán VietQR (PayOS)",
+    seller: "ticketfest_demo",
+    sellerAvatar: "https://api.dicebear.com/7.x/bottts/svg?seed=ticketfest",
+    sellerRating: 5.0,
+    sellerSuccessCount: 99,
+    sellerNote: "Vé demo kiểm thử tính năng thanh toán PayOS VietQR tự động chỉ 2.000đ.",
+    originalPrice: "2.000đ",
+    passPrice: "2.000đ",
+    verified: true,
+    createdAt: "Vừa xong",
+  },
   // ==================== CONCERT 1: ANH TRAI SAY HI ====================
   {
     id: 1,

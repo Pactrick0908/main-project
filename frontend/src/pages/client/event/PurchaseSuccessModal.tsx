@@ -8,6 +8,7 @@ interface PurchaseSuccessModalProps {
     zone: string;
     qty: number;
     total: number;
+    seats?: string[];
   } | null;
   onClose: () => void;
   formatVND: (amount: number) => string;
@@ -55,6 +56,14 @@ export default function PurchaseSuccessModal({
             <span className="text-zinc-400">Hạng vé:</span>
             <span className="font-semibold text-[#F97316]">{ticketInfo.zone}</span>
           </div>
+          {ticketInfo.seats && ticketInfo.seats.length > 0 && (
+            <div className="flex justify-between">
+              <span className="text-zinc-400">Vị trí ghế:</span>
+              <span className="font-bold text-amber-400">
+                {ticketInfo.seats.join(", ")}
+              </span>
+            </div>
+          )}
           <div className="flex justify-between">
             <span className="text-zinc-400">Số lượng:</span>
             <span className="font-mono text-white">{ticketInfo.qty} vé</span>

@@ -10,8 +10,24 @@ import {
 } from "@/components/ui/carousel";
 import type { FeaturedEvent } from "../../../pages/client/home/FeaturedCard";
 import FeaturedCard from "../../../pages/client/home/FeaturedCard";
+import { eventApi } from "@/api/event.api";
 
 const FEATURED: FeaturedEvent[] = [
+  {
+    id: 99,
+    title: "🧪 Vé Thử Nghiệm Thanh Toán PayOS (VietQR 2.000đ)",
+    artist: "Hệ Thống Kiểm Thử Tự Động TicketFest",
+    category: "Demo PayOS",
+    image:
+      "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=1400&q=80",
+    date: "Hôm nay · Mở 24/7",
+    location: "Cổng Thanh Toán Trực Tuyến PayOS",
+    priceRange: "2.000đ",
+    officialLink: "#",
+    ticketsAvailable: true,
+    passCount: 1,
+    tag: "🧪 Test PayOS (2K)",
+  },
   {
     id: 1,
     title: "Anh Trai Say Hi 2026 — The Final Concert Night 3",
@@ -91,6 +107,43 @@ const FEATURED: FeaturedEvent[] = [
 function FeaturedCarousel() {
   const [api, setApi] = useState<CarouselApi>();
   const [isHovered, setIsHovered] = useState(false);
+  const [items, setItems] = useState<FeaturedEvent[]>(FEATURED);
+
+  // Tải danh sách sự kiện từ backend DB
+  useEffect(() => {
+    let isMounted = true;
+    eventApi.listEvents()
+      .then((res) => {
+        if (isMounted && res.data?.events?.length > 0) {
+          const dbItems: FeaturedEvent[] = res.data.events.map((e) => ({
+            id: e.id,
+            title: e.title,
+            artist: e.artist,
+            category: e.category || "Concert",
+            image: e.bannerImage || e.thumbnail,
+            date: e.date,
+            location: e.venue,
+            priceRange: e.priceRange || "Liên hệ",
+            officialLink: `/events/${e.id}`,
+            ticketsAvailable: e.ticketsAvailable,
+            passCount: e.passCount || 0,
+            tag: e.id === 99 ? "🧪 Test PayOS (2K)" : (e.ticketsAvailable ? "Còn vé" : "Hết vé"),
+          }));
+
+          // Giữ sự kiện demo test 99 ở đầu nếu DB chưa có
+          const has99InDb = dbItems.some((item) => item.id === 99);
+          const combined = has99InDb ? dbItems : [FEATURED[0], ...dbItems];
+          setItems(combined);
+        }
+      })
+      .catch((err) => {
+        console.warn("[FeaturedCarousel] Dùng mock events:", err?.message);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Tự động next sau mỗi 3.5s và lặp vô tận (loop: true)
   useEffect(() => {
@@ -127,7 +180,7 @@ function FeaturedCarousel() {
             className="w-full"
           >
             <CarouselContent className="-ml-4">
-              {FEATURED.map((event) => (
+              {items.map((event) => (
                 <CarouselItem
                   key={event.id}
                   className="pl-4 md:basis-1/2 lg:basis-2/5"

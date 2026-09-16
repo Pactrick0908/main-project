@@ -1,63 +1,60 @@
 import { ChevronRight, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import UpcomingCard from "./UpcomingCard";
 import type { UpcomingEvent } from "./UpcomingCard";
+import { eventApi } from "@/api/event.api";
 
-const ALL_CATEGORIES = ["Tất cả", "V-Pop", "K-Pop", "Rap", "Indie", "EDM"];
-
-const UPCOMING: UpcomingEvent[] = [
-  {
-    id: 6,
-    title: "Những Thành Phố Mơ Màng Year-End Music Festival",
-    artist: "Vũ, Chillies, Ngọt, Đen Vâu",
-    category: "Indie",
-    image:
-      "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?auto=format&fit=crop&w=800&q=80",
-    date: "16:00 · 20/11/2026",
-    location: "Công viên Yên Sở, Hà Nội",
-    priceRange: "500.000 – 900.000đ",
-    officialLink: "#",
-    ticketsAvailable: true,
-    passCount: 5,
-  },
-  {
-    id: 7,
-    title: "Chị Đẹp Đạp Gió Rẽ Sóng 2026 — The Grand Gala Night",
-    artist: "Dàn Nghệ Sĩ Chị Đẹp",
-    category: "V-Pop",
-    image:
-      "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80",
-    date: "20:00 · 08/01/2027",
-    location: "SECC, TP. HCM",
-    priceRange: "1.500.000 – 3.500.000đ",
-    officialLink: "#",
-    ticketsAvailable: true,
-    passCount: 0,
-  },
-  {
-    id: 8,
-    title: "Monsoon Music Festival: Gió Mùa Âm Nhạc Di Sản",
-    artist: "Quốc tế & Indie Việt",
-    category: "Indie",
-    image:
-      "https://images.unsplash.com/photo-1465847899084-d164df4dedc6?auto=format&fit=crop&w=800&q=80",
-    date: "17:00 · 18/01/2027",
-    location: "Hoàng Thành Thăng Long, Hà Nội",
-    priceRange: "800.000 – 1.800.000đ",
-    officialLink: "#",
-    ticketsAvailable: true,
-    passCount: 3,
-  },
+const ALL_CATEGORIES = [
+  "Tất cả",
+  "V-Pop",
+  "K-Pop",
+  "Rap",
+  "Indie",
+  "EDM",
+  "Concert",
 ];
 
 function UpcomingSection() {
   const [active, setActive] = useState("Tất cả");
+  const [eventsList, setEventsList] = useState<UpcomingEvent[]>([]);
+
+  // Tải danh sách sự kiện từ DB
+  useEffect(() => {
+    let isMounted = true;
+    eventApi
+      .listEvents()
+      .then((res) => {
+        if (isMounted && res.data?.events?.length > 0) {
+          const dbEvents: UpcomingEvent[] = res.data.events.map((e) => ({
+            id: e.id,
+            title: e.title,
+            artist: e.artist,
+            category: e.category || "V-Pop",
+            image: e.bannerImage || e.thumbnail,
+            date: e.date,
+            location: e.venue,
+            priceRange: e.priceRange || "Liên hệ",
+            officialLink: `/events/${e.id}`,
+            ticketsAvailable: e.ticketsAvailable,
+            passCount: e.passCount || 0,
+          }));
+          setEventsList(dbEvents);
+        }
+      })
+      .catch((err) => {
+        console.warn("[UpcomingSection] Dùng mock events:", err?.message);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const filtered =
     active === "Tất cả"
-      ? UPCOMING
-      : UPCOMING.filter((e) => e.category === active);
+      ? eventsList
+      : eventsList.filter((e) => e.category === active);
 
   return (
     <section id="events" className="border-b border-zinc-800/60">

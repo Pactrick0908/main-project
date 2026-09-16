@@ -6,6 +6,7 @@ import {
   type MarketplaceTicket,
 } from "../marketplace.data";
 import { EVENTS_DATA } from "@/data/events.data";
+import { eventApi } from "@/api/event.api";
 import EventResaleHero from "./EventResaleHero";
 import EventResaleFilter from "./EventResaleFilter";
 import SellerOfferCard from "./SellerOfferCard";
@@ -19,6 +20,23 @@ export default function EventResalePage() {
   const navigate = useNavigate();
   const eventId = id ? parseInt(id, 10) : 1;
 
+  // Thông tin concert (tải từ DB, fallback mock)
+  const [officialEvent, setOfficialEvent] = useState<any>(() => EVENTS_DATA[eventId] || EVENTS_DATA[1]);
+
+  useEffect(() => {
+    let isMounted = true;
+    eventApi.getEventById(eventId)
+      .then((res) => {
+        if (isMounted && res.data?.event) {
+          setOfficialEvent(res.data.event);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, [eventId]);
+
   // Tự động cuộn lên đầu trang khi mở hoặc đổi concert
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
@@ -28,14 +46,8 @@ export default function EventResalePage() {
 
   // Lấy danh sách người pass cho event này
   const eventTickets = useMemo(() => {
-    const list = getResaleTicketsByEventId(eventId);
-    if (list.length > 0) return list;
-    // Fallback: nếu id không có vé cụ thể, lấy vé đầu tiên hoặc rỗng
-    return MARKETPLACE_TICKETS.filter((t) => t.eventId === 1);
+    return getResaleTicketsByEventId(eventId);
   }, [eventId]);
-
-  // Thông tin concert
-  const officialEvent = EVENTS_DATA[eventId] || EVENTS_DATA[1];
   const firstTicket = eventTickets[0];
 
   const eventTitle =
