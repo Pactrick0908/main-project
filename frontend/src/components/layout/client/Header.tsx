@@ -20,7 +20,6 @@ import {
   Check,
   Copy,
   PlusCircle,
-  User as UserIcon,
   Home,
   Calendar,
   ShoppingBag,
@@ -55,7 +54,10 @@ export default function Header() {
   // Click outside closes dropdown
   useEffect(() => {
     function handler(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
         setDropdownOpen(false);
       }
     }
@@ -65,8 +67,16 @@ export default function Header() {
 
   const navLinks: NavLink[] = [
     { name: "Trang chủ", href: "/", icon: <Home className="h-4 w-4" /> },
-    { name: "Sự kiện", href: "/#events", icon: <Calendar className="h-4 w-4" /> },
-    { name: "Chợ vé", href: "/marketplace", icon: <ShoppingBag className="h-4 w-4" /> },
+    {
+      name: "Sự kiện",
+      href: "/#events",
+      icon: <Calendar className="h-4 w-4" />,
+    },
+    {
+      name: "Chợ vé",
+      href: "/marketplace",
+      icon: <ShoppingBag className="h-4 w-4" />,
+    },
   ];
 
   const isActive = (href: string) => {
@@ -98,24 +108,28 @@ export default function Header() {
   };
 
   const userInitials = user?.name
-    ? user.name.split(" ").map((n) => n[0]).slice(-2).join("").toUpperCase()
+    ? user.name
+        .split(" ")
+        .map((n) => n[0])
+        .slice(-2)
+        .join("")
+        .toUpperCase()
     : "?";
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-zinc-800/70 bg-[#090A0F]/95 backdrop-blur-md">
       <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4 sm:px-6 lg:px-8">
-
         {/* ── LEFT: LOGO ─────────────────────── */}
         <Link to="/" className="flex shrink-0 items-center gap-2.5 group">
           <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-700/80 bg-zinc-900 text-[#F97316] transition-colors group-hover:border-[#F97316]/40">
             <Ticket className="h-3.5 w-3.5 -rotate-12" />
           </div>
           <span className="text-sm font-bold tracking-tight text-white">
-            Solana Tickets
+            TicketFest
           </span>
-          <span className="hidden sm:flex items-center gap-1 font-mono text-[10px] text-zinc-600">
+          <span className="hidden sm:flex items-center gap-1 text-[10px] text-zinc-500 font-medium">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-            Mainnet
+            Trực tuyến
           </span>
         </Link>
 
@@ -190,28 +204,21 @@ export default function Header() {
                       </AvatarFallback>
                     </Avatar>
                     <div className="min-w-0">
-                      <div className="truncate text-xs font-semibold text-white">{user.name}</div>
-                      <div className="truncate text-[11px] text-zinc-500">{user.email}</div>
+                      <div className="truncate text-xs font-semibold text-white">
+                        {user.name}
+                      </div>
+                      <div className="truncate text-[11px] text-zinc-500">
+                        {user.email}
+                      </div>
                     </div>
                   </div>
 
-                  {/* WALLET CHIP */}
+                  {/* USER STATUS CHIP */}
                   <div className="mx-3 mb-2 flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/60 px-2.5 py-1.5">
-                    <div className="flex items-center gap-1.5 font-mono text-[11px] text-zinc-300">
+                    <div className="flex items-center gap-1.5 text-[11px] text-zinc-300 font-medium">
                       <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
-                      <span>{user.walletAddress || "8xG7...91eF"}</span>
+                      <span>Thành viên đã xác thực</span>
                     </div>
-                    <button
-                      onClick={copyWallet}
-                      className="rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-white cursor-pointer transition-colors"
-                      title="Sao chép địa chỉ ví"
-                    >
-                      {copied ? (
-                        <Check className="h-3 w-3 text-emerald-400" />
-                      ) : (
-                        <Copy className="h-3 w-3" />
-                      )}
-                    </button>
                   </div>
 
                   <Separator className="bg-zinc-800/80" />
@@ -219,7 +226,7 @@ export default function Header() {
                   {/* MENU ITEMS */}
                   <div className="p-1.5">
                     <Link
-                      to="/ticket"
+                      to="/my-tickets"
                       onClick={() => setDropdownOpen(false)}
                       className="flex items-center justify-between rounded-lg px-2.5 py-2 text-xs font-medium text-zinc-300 hover:bg-zinc-800/70 hover:text-white transition-colors"
                     >
@@ -246,7 +253,10 @@ export default function Header() {
 
                   <div className="p-1.5">
                     <button
-                      onClick={() => { logout(); setDropdownOpen(false); }}
+                      onClick={() => {
+                        logout();
+                        setDropdownOpen(false);
+                      }}
                       className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-red-400 hover:bg-red-950/40 hover:text-red-300 transition-colors cursor-pointer"
                     >
                       <LogOut className="h-3.5 w-3.5" />
@@ -283,10 +293,8 @@ export default function Header() {
           )}
 
           <Sheet>
-            <SheetTrigger asChild>
-              <button className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-300 hover:text-white transition-colors cursor-pointer">
-                <Menu className="h-4 w-4" />
-              </button>
+            <SheetTrigger className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-300 hover:text-white transition-colors cursor-pointer">
+              <Menu className="h-4 w-4" />
             </SheetTrigger>
             <SheetContent
               side="right"
@@ -296,7 +304,7 @@ export default function Header() {
               <SheetHeader className="border-b border-zinc-800 px-4 py-3">
                 <SheetTitle className="flex items-center gap-2 text-sm font-bold text-white">
                   <Ticket className="h-4 w-4 text-[#F97316]" />
-                  Solana Tickets
+                  TicketFest
                 </SheetTitle>
               </SheetHeader>
 
@@ -340,7 +348,9 @@ export default function Header() {
                         </AvatarFallback>
                       </Avatar>
                       <div className="min-w-0">
-                        <div className="truncate text-xs font-semibold text-white">{user.name}</div>
+                        <div className="truncate text-xs font-semibold text-white">
+                          {user.name}
+                        </div>
                         <div className="flex items-center gap-1 font-mono text-[10px] text-zinc-500">
                           <span className="h-1 w-1 rounded-full bg-emerald-400"></span>
                           {user.walletAddress || "8xG7...91eF"}
@@ -349,7 +359,7 @@ export default function Header() {
                     </div>
 
                     <Link
-                      to="/ticket"
+                      to="/my-tickets"
                       className="flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium text-zinc-300 hover:bg-zinc-800/70 hover:text-white transition-colors"
                     >
                       <div className="flex items-center gap-3">
@@ -398,7 +408,6 @@ export default function Header() {
             </SheetContent>
           </Sheet>
         </div>
-
       </div>
     </header>
   );

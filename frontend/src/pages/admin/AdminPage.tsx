@@ -45,7 +45,7 @@ export default function AdminPage() {
   const [events, setEvents] = useState<EventItem[]>([
     {
       id: 'EVT-001',
-      name: 'Đêm Nhạc Indie 2025 (Solana Live)',
+      name: 'Đêm Nhạc Indie 2025',
       location: 'Sân vận động Mỹ Đình, Hà Nội',
       date: '26/08/2026',
       priceVnd: 1500000,
@@ -80,7 +80,6 @@ export default function AdminPage() {
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
 
   const fetchRealTicketsData = async (isInitial = false) => {
     if (isInitial) setIsLoading(true);
@@ -161,8 +160,8 @@ export default function AdminPage() {
               T3
             </div>
             <div>
-              <h1 className="font-extrabold text-white text-lg tracking-wide">Ticket3</h1>
-              <div className="text-xs text-purple-400 font-medium">Solana Devnet</div>
+              <h1 className="font-extrabold text-white text-lg tracking-wide">TicketFest</h1>
+              <div className="text-xs text-purple-400 font-medium">Hệ thống quản lý vé</div>
             </div>
           </div>
 
@@ -189,27 +188,28 @@ export default function AdminPage() {
                 activeTab === 'tickets' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:bg-slate-800'
               }`}
             >
-              <span>Vé đã bán (Live Devnet)</span>
+              <span>Vé đã bán ({tickets.length})</span>
             </button>
           </nav>
         </div>
 
         <div className="p-4 m-4 bg-slate-800/60 rounded-xl border border-slate-800 text-xs">
-          <div className="text-slate-400 mb-1">Program ID</div>
-          <a
-            href="https://explorer.solana.com/address/GGadYLQQ5S2r26ajUHEiy7v2NMKN41rJXETb395kbq1H?cluster=devnet"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-mono text-purple-300 font-semibold hover:underline block truncate"
-          >
-            GGadYLQQ5S...395kbq1H
-          </a>
+          <div className="text-slate-400 mb-1">Trạng thái hệ thống</div>
+          <div className="font-semibold text-emerald-400 flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-emerald-400"></span>
+            Máy chủ hoạt động bình thường
+          </div>
         </div>
       </aside>
 
       <div className="flex-1 flex flex-col overflow-y-auto">
         <header className="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between sticky top-0 z-10">
-          <h2 className="text-xl font-bold text-slate-900">Admin Dashboard</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-bold text-slate-900">Admin Dashboard</h2>
+            {lastUpdated && (
+              <span className="text-xs text-slate-400 font-medium">({lastUpdated})</span>
+            )}
+          </div>
           <div className="flex items-center space-x-3">
             <button
               onClick={() => setActiveTab('events')}
@@ -230,7 +230,7 @@ export default function AdminPage() {
         <main className="p-8 space-y-8 flex-1">
           {isLoading && (
             <div className="bg-purple-50 border border-purple-200 text-purple-800 px-6 py-4 rounded-2xl">
-              Đang tải dữ liệu từ Solana Devnet...
+              Đang tải dữ liệu hệ thống vé...
             </div>
           )}
 
@@ -250,7 +250,7 @@ export default function AdminPage() {
                   <div className="mt-4 text-2xl font-extrabold text-slate-900">{checkedInCount} / {totalTicketsSold}</div>
                 </div>
                 <div className="bg-white p-6 rounded-2xl border shadow-sm">
-                  <span className="text-xs font-bold text-slate-400 uppercase">Sự kiện On-chain</span>
+                  <span className="text-xs font-bold text-slate-400 uppercase">Sự kiện hoạt động</span>
                   <div className="mt-4 text-2xl font-extrabold text-slate-900">{events.length} Sự kiện</div>
                 </div>
               </div>
@@ -258,7 +258,7 @@ export default function AdminPage() {
               <div className="bg-slate-900 p-6 rounded-2xl text-white flex items-center justify-between shadow-lg">
                 <div>
                   <h3 className="text-lg font-bold">Thêm sự kiện / chương trình mới</h3>
-                  <p className="text-xs text-slate-400 mt-1">Đăng ký sự kiện mới và liên kết với Solana Devnet Program ID</p>
+                  <p className="text-xs text-slate-400 mt-1">Đăng ký sự kiện mới và thiết lập hệ thống vé</p>
                 </div>
                 <button
                   onClick={() => setActiveTab('events')}
@@ -280,7 +280,7 @@ export default function AdminPage() {
                     THÊM SỰ KIỆN / CHƯƠNG TRÌNH MỚI
                   </h3>
                   <p className="text-xs text-slate-500 mt-1">
-                    Nhập thông tin bên dưới để khởi tạo chương trình mới và đăng ký lên Solana Devnet.
+                    Nhập thông tin bên dưới để khởi tạo chương trình mới và phát hành vé tự động.
                   </p>
                 </div>
 
@@ -423,14 +423,14 @@ export default function AdminPage() {
 
           {!isLoading && activeTab === 'tickets' && (
             <div className="bg-white rounded-2xl border shadow-sm p-6 space-y-4">
-              <h3 className="text-base font-bold text-slate-900">Vé đã bán từ Devnet</h3>
+              <h3 className="text-base font-bold text-slate-900">Danh sách vé đã phát hành</h3>
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase">
-                    <th className="p-4">Tx Hash (Chữ ký Solana)</th>
+                    <th className="p-4">Mã vé / Mã giao dịch</th>
                     <th className="p-4">Sự kiện</th>
-                    <th className="p-4">Check-in</th>
-                    <th className="p-4 text-right">Thao tác Real-time / Explorer</th>
+                    <th className="p-4">Trạng thái Check-in</th>
+                    <th className="p-4 text-right">Thao tác</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y text-sm">
@@ -440,28 +440,23 @@ export default function AdminPage() {
                       <td className="p-4 font-semibold">{t.event_name}</td>
                       <td className="p-4">
                         {t.is_checked_in ? (
-                          <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">🟢 Đã vào</span>
+                          <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">🟢 Đã vào cổng</span>
                         ) : (
-                          <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800">🟡 Chưa vào</span>
+                          <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800">🟡 Chưa check-in</span>
                         )}
                       </td>
                       <td className="p-4 text-right space-x-2">
                         {!t.is_checked_in && (
                           <button
                             onClick={() => handleQuickCheckIn(t.tx_hash)}
-                            className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700"
+                            className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 cursor-pointer"
                           >
                             ⚡ Check-in Nhanh
                           </button>
                         )}
-                        <a
-                          href={`https://explorer.solana.com/tx/${t.tx_hash}?cluster=devnet`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-3 py-1.5 rounded-lg bg-purple-50 text-purple-700 font-bold text-xs hover:bg-purple-600 hover:text-white border border-purple-200"
-                        >
-                          Solana Explorer &rarr;
-                        </a>
+                        <span className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 font-semibold text-xs border border-slate-200">
+                          Vé hợp lệ
+                        </span>
                       </td>
                     </tr>
                   ))}

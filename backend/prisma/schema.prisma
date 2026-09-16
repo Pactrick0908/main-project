@@ -7,6 +7,17 @@ datasource db {
   provider = "postgresql"
 }
 
+model Role {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique @db.VarChar(50)
+  description String?  @db.VarChar(255)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  user User[]
+
+  @@map("roles")
+}
+
 model User {
   id            Int      @id @default(autoincrement())
   email         String   @unique @db.VarChar(100)
@@ -14,11 +25,13 @@ model User {
   googleId      String   @db.VarChar(100)
   walletAddress String   @db.VarChar(100)
   avatarUrl     String   @map("avatar_url") @db.VarChar(255)
-  role          String?  @default("customer") @db.VarChar(20)
+  roleId        Int?     @default(1) @map("role_id")
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
 
+  role            Role?    @relation(fields: [roleId], references: [id], onDelete: SetNull)
   organizedEvents Event[]
   tickets         Ticket[]
+  orders          Order[]
 
   @@map("users")
 }
@@ -125,6 +138,7 @@ model Ticket {
   eventZone EventZone     @relation(fields: [eventZoneId], references: [id], onDelete: Restrict)
   user      User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   nonces    TicketNonce[]
+  orders    Order[]
 
   @@index([ownerWallet])
   @@index([userId])
@@ -145,4 +159,43 @@ model TicketNonce {
   @@index([ticketId])
   @@index([expiresAt])
   @@map("ticket_nonces")
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+model Order {
+  id             Int         @id @default(autoincrement())
+  orderCode      BigInt      @unique @map("order_code")
+  userId         Int         @map("user_id")
+  ticketId       Int?        @map("ticket_id")
+  quantity       Int         @default(1)
+  totalAmount    Decimal     @map("total_amount") @db.Decimal(15, 2)
+  adminAmount    Decimal     @map("admin_amount") @db.Decimal(15, 2)
+  systemAmount   Decimal     @map("system_amount") @db.Decimal(15, 2)
+  solAmount      Float       @default(0.001) @map("sol_amount")
+  status         OrderStatus @default(PENDING)
+  solTxSignature String?     @map("sol_tx_signature") @db.VarChar(128)
+  paymentLinkId  String?     @map("payment_link_id") @db.VarChar(100)
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticket Ticket? @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+
+  @@index([orderCode])
+  @@index([userId])
+  @@map("orders")
+}
+
+model AdminBalance {
+  id            Int      @id @default(autoincrement())
+  totalRevenue  Decimal  @default(0) @map("total_revenue") @db.Decimal(15, 2)
+  systemRevenue Decimal  @default(0) @map("system_revenue") @db.Decimal(15, 2)
+  lastUpdated   DateTime @default(now()) @updatedAt @map("last_updated") @db.Timestamp(6)
+
+  @@map("admin_balance")
 }

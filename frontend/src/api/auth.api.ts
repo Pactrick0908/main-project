@@ -1,6 +1,8 @@
+// ─── Types ───────────────────────────────────────────────────────────────────
+
 export interface AuthUser {
   id?: number;
-  googleId: string;
+  googleId?: string;
   name: string;
   email: string;
   avatar: string;
@@ -8,23 +10,28 @@ export interface AuthUser {
   role?: string;
 }
 
-export interface LoginResponse {
-  success: boolean;
-  message: string;
-  data: {
-    token: string;
-    user: AuthUser;
-  };
+export interface AuthSession {
+  token: string;
+  user: AuthUser;
 }
+
+// ─── Config ──────────────────────────────────────────────────────────────────
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5000/api/v1";
 
+// ─── LocalStorage helpers ────────────────────────────────────────────────────
+
+const KEYS = {
+  token: "slt_token",
+  user: "slt_user",
+} as const;
+
 export function getToken(): string | null {
-  return localStorage.getItem("token");
+  return localStorage.getItem(KEYS.token);
 }
 
 export function getStoredUser(): AuthUser | null {
-  const raw = localStorage.getItem("user");
+  const raw = localStorage.getItem(KEYS.user);
   if (!raw) return null;
   try {
     return JSON.parse(raw) as AuthUser;
@@ -33,38 +40,40 @@ export function getStoredUser(): AuthUser | null {
   }
 }
 
-export function saveSession(token: string, user: AuthUser) {
-  localStorage.setItem("token", token);
-  localStorage.setItem("user", JSON.stringify(user));
+export function saveSession(token: string, user: AuthUser): void {
+  localStorage.setItem(KEYS.token, token);
+  localStorage.setItem(KEYS.user, JSON.stringify(user));
 }
 
-export function clearSession() {
-  localStorage.removeItem("token");
-  localStorage.removeItem("user");
+export function clearSession(): void {
+  localStorage.removeItem(KEYS.token);
+  localStorage.removeItem(KEYS.user);
+}
+
+// ─── API calls ───────────────────────────────────────────────────────────────
+
+async function post<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  const json = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(json.message || `HTTP ${res.status}`);
+  }
+
+  // Backend shape: { success, message, data: { token, user } }
+  return json.data as T;
 }
 
 export const authApi = {
-  loginWithGoogle: async (credential: string): Promise<LoginResponse> => {
-    const res = await fetch(`${API_BASE}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: credential }),
-    });
+  /** Đăng nhập bằng Google ID Token */
+  loginWithGoogle: (idToken: string) =>
+    post<AuthSession>("/auth/login", { token: idToken }),
 
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(body.message || "Đăng nhập thất bại");
-    }
-
-    return body.data;
-  },
-
-  loginDemo: async (): Promise<LoginResponse["data"]> => {
-    const res = await fetch(`${API_BASE}/auth/demo`, { method: "POST" });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(body.message || "Đăng nhập demo thất bại");
-    }
-    return body.data;
-  },
+  /** Đăng nhập demo — không cần Google */
+  loginDemo: () => post<AuthSession>("/auth/demo"),
 };

@@ -27,10 +27,11 @@ export const login = async (req: Request, res: Response) => {
       data: result,
     });
   } catch (error: any) {
-    console.error("Register Error: ", error);
-    return res
-      .status(500)
-      .json({ success: false, message: "Lỗi Server khi đăng nhập" });
+    console.error("Login Error: ", error);
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "Lỗi Server khi đăng nhập (Kiểm tra kết nối Database)",
+    });
   }
 };
 

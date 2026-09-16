@@ -57,22 +57,24 @@ function UpcomingCard({ event }: { event: UpcomingEvent }) {
           <div className="flex items-center gap-1.5">
             {event.passCount > 0 && (
               <Link
-                to="/marketplace"
+                to={`/events/${event.id}/resale`}
                 className="text-[10px] text-zinc-400 hover:text-white transition-colors"
               >
                 {event.passCount} vé pass
               </Link>
             )}
-            <a
-              href={event.officialLink}
-              className={`inline-flex h-7 items-center gap-1 rounded-lg px-2.5 text-[11px] font-semibold transition-colors ${
-                event.ticketsAvailable
-                  ? "bg-[#F97316] hover:bg-[#ea6d0e] text-white"
-                  : "border border-zinc-700 text-zinc-500 cursor-not-allowed"
-              }`}
-            >
-              {event.ticketsAvailable ? "Mua vé" : "Hết vé"}
-            </a>
+            {event.ticketsAvailable ? (
+              <Link
+                to={`/events/${event.id}`}
+                className="inline-flex h-7 items-center gap-1 rounded-lg px-2.5 text-[11px] font-semibold bg-[#F97316] hover:bg-[#ea6d0e] text-white transition-colors"
+              >
+                Mua vé
+              </Link>
+            ) : (
+              <span className="inline-flex h-7 items-center rounded-lg px-2.5 text-[11px] font-semibold border border-zinc-700 text-zinc-500 cursor-not-allowed">
+                Hết vé
+              </span>
+            )}
           </div>
         </div>
       </div>

@@ -8,6 +8,8 @@ import MarketplacePage from "@/pages/client/market/MarketplacePage";
 import AdminLayout from "@/layouts/admin/AdminLayout";
 import MyTicketsPage from "@/pages/client/ticket/MyTicketsPage";
 import ScannerPage from "@/pages/admin/ScannerPage";
+import EventDetailPage from "@/pages/client/event/EventDetailPage";
+import EventResalePage from "@/pages/client/market/resale/EventResalePage";
 
 export const router = createBrowserRouter([
   {
@@ -23,8 +25,20 @@ export const router = createBrowserRouter([
         element: <MyTicketsPage />,
       },
       {
+        path: "events/:id",
+        element: <EventDetailPage />,
+      },
+      {
+        path: "events/:id/resale",
+        element: <EventResalePage />,
+      },
+      {
         path: "marketplace",
         element: <MarketplacePage />,
+      },
+      {
+        path: "marketplace/events/:id",
+        element: <EventResalePage />,
       },
     ],
   },

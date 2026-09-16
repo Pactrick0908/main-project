@@ -1,71 +1,113 @@
 import { useState } from "react";
-import { Ticket } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import Login from "@/components/Login";
-import { authApi, saveSession } from "@/api/auth.api";
+import { Link, useNavigate } from "react-router-dom";
+import { Ticket, Zap, ShieldCheck, ArrowLeft, Loader2 } from "lucide-react";
+import GoogleLoginButton from "@/pages/auth/GoogleLoginButton";
+import { authApi } from "@/api/auth.api";
+import { useAuth } from "@/context/AuthContext";
+
+const FEATURES = [
+  {
+    icon: <Ticket className="h-4 w-4 text-[#F97316]" />,
+    text: "Vé điện tử chính hãng có mã định danh",
+  },
+  {
+    icon: <Zap className="h-4 w-4 text-[#F97316]" />,
+    text: "Dynamic QR · Tự hết hạn sau 60s",
+  },
+  {
+    icon: <ShieldCheck className="h-4 w-4 text-[#F97316]" />,
+    text: "Ký quỹ trung gian · Giao dịch an toàn 100%",
+  },
+];
 
 function LoginPage() {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [demoBusy, setDemoBusy] = useState(false);
 
   const handleDemoLogin = async () => {
     setDemoBusy(true);
     try {
-      const data = await authApi.loginDemo();
-      saveSession(data.token, data.user);
-      navigate("/my-tickets", { replace: true });
+      const session = await authApi.loginDemo();
+      login(session.user, session.token);
+      navigate("/", { replace: true });
     } catch (err) {
       alert(err instanceof Error ? err.message : "Đăng nhập demo thất bại");
     } finally {
       setDemoBusy(false);
     }
   };
+
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-4">
-      {/* NỀN TRANG TRÍ */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
-        <div className="absolute -top-40 -right-40 w-96 h-96 bg-purple-200 rounded-full blur-3xl opacity-50"></div>
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-blue-200 rounded-full blur-3xl opacity-50"></div>
-      </div>
+    <div className="flex flex-1 flex-col items-center justify-center px-4 py-16">
+      {/* Back to home */}
+      <Link
+        to="/"
+        className="absolute left-6 top-6 flex items-center gap-1.5 text-sm text-zinc-500 transition-colors hover:text-white"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Trang chủ
+      </Link>
 
-      {/* CONTAINER CHÍNH */}
-      <div className="relative z-10 w-full max-w-md">
-        <div className="bg-white/80 backdrop-blur-md p-8 rounded-3xl shadow-xl border border-slate-100">
-          {/* Header Icon */}
-          <div className="flex justify-center mb-6">
-            <div className="w-16 h-16 bg-gradient-to-tr from-purple-600 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-200">
-              <Ticket className="w-8 h-8 text-white" />
+      {/* Card */}
+      <div className="w-full max-w-sm">
+        {/* Logo area */}
+        <div className="mb-8 flex flex-col items-center text-center">
+          <div className="relative mb-4">
+            <div className="absolute inset-0 rounded-2xl bg-[#F97316]/30 blur-xl" />
+            <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-[#F97316]/30 bg-zinc-900">
+              <Ticket className="h-8 w-8 text-[#F97316]" />
             </div>
           </div>
-
-          <div className="text-center mb-8">
-            <h1 className="text-2xl font-black text-slate-800 tracking-tight">
-              Solana Tickets
-            </h1>
-            <p className="text-sm text-slate-500 mt-1">
-              Đăng nhập để xem vé và nhận mã QR check-in
-            </p>
-          </div>
-
-          <div className="space-y-4">
-            <div className="flex justify-center">
-              <Login />
-            </div>
-            <button
-              type="button"
-              onClick={() => void handleDemoLogin()}
-              disabled={demoBusy}
-              className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-            >
-              {demoBusy ? "Đang vào…" : "Vào thử (không cần Google)"}
-            </button>
-          </div>
-
-          <p className="text-xs text-center text-slate-400 mt-6 leading-relaxed">
-            Khi đăng nhập, hệ thống sẽ tự sinh 1 ví Solana ngầm bảo mật tương
-            ứng với tài khoản của bạn.
+          <h1 className="text-2xl font-bold tracking-tight text-white">
+            TicketFest
+          </h1>
+          <p className="mt-1.5 text-sm text-zinc-400">
+            Đăng nhập để xem vé &amp; nhận mã QR check-in
           </p>
         </div>
+
+        {/* Main card */}
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6 backdrop-blur-sm">
+          {/* Feature chips */}
+          <div className="mb-6 flex flex-col gap-2">
+            {FEATURES.map((f, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-2.5 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2"
+              >
+                {f.icon}
+                <span className="text-xs text-zinc-400">{f.text}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Divider */}
+          <div className="mb-5 flex items-center gap-3">
+            <div className="h-px flex-1 bg-zinc-800" />
+            <span className="text-[11px] text-zinc-600">Đăng nhập với</span>
+            <div className="h-px flex-1 bg-zinc-800" />
+          </div>
+
+          {/* Google login button */}
+          <div className="flex flex-col items-center gap-3">
+            <GoogleLoginButton />
+            <button
+              type="button"
+              onClick={handleDemoLogin}
+              disabled={demoBusy}
+              className="w-full flex items-center justify-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/80 py-2 text-xs font-semibold text-zinc-300 hover:border-zinc-700 hover:text-white transition-colors cursor-pointer"
+            >
+              {demoBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Đăng nhập nhanh Demo
+            </button>
+          </div>
+        </div>
+
+        {/* Footer note */}
+        <p className="mt-6 text-center text-[11px] leading-relaxed text-zinc-600">
+          Tài khoản của bạn được bảo vệ với mã hóa bảo mật hai lớp an toàn tuyệt đối.
+        </p>
       </div>
     </div>
   );

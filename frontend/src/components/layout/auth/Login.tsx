@@ -47,12 +47,12 @@ export default function Login() {
         const decoded = jwtDecode<GoogleJwtPayload>(idToken);
         login(
           {
-            name: decoded.name || "Người dùng Solana",
-            email: decoded.email || "user@solana.io",
+            name: decoded.name || "Khách hàng",
+            email: decoded.email || "user@ticketfest.vn",
             avatar:
               decoded.picture ||
               "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80",
-            walletAddress: "8xG7p9...41eF",
+            walletAddress: "USR-89104",
           },
           idToken
         );

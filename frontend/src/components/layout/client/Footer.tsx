@@ -189,7 +189,7 @@ export default function Footer() {
               {/* APP BADGES */}
               <div className="border-t border-slate-700/50 pt-5">
                 <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-300">
-                  Ứng dụng Solana Tickets
+                  Ứng dụng TicketFest
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <AppBadge store="google" />
@@ -331,19 +331,19 @@ export default function Footer() {
                   </svg>
                 </div>
                 <span className="text-base font-bold tracking-tight text-white">
-                  Solana Tickets
+                  TicketFest
                 </span>
               </div>
               <p className="max-w-[200px] text-[11px] leading-relaxed text-slate-500">
                 Nền tảng mua bán và trao đổi vé sự kiện uy tín tại Việt Nam.
               </p>
-              <p className="text-[11px] text-slate-600">© 2026 Solana Tickets</p>
+              <p className="text-[11px] text-slate-600">© 2026 TicketFest</p>
             </div>
 
             {/* CENTER: LEGAL INFO */}
             <div className="space-y-1.5">
               <p className="text-[11px] font-semibold text-slate-400">
-                CÔNG TY CỔ PHẦN SOLANA TICKETS VIỆT NAM
+                CÔNG TY CỔ PHẦN TICKETFEST VIỆT NAM
               </p>
               <p className="text-[10px] leading-relaxed text-slate-600">
                 Đại diện pháp luật: Nguyễn Văn A

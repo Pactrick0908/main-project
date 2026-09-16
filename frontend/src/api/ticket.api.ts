@@ -55,9 +55,46 @@ export const ticketApi = {
     api<{ success: boolean; data: { tickets: TicketDto[] } }>("/tickets/mine"),
 
   issueDemo: () =>
-    api<{ success: boolean; data: { ticket: TicketDto } }>("/tickets/demo", {
+    api<{ success: boolean; data: { ticket: TicketDto } }>(
+      "/tickets/issue-demo",
+      { method: "POST" },
+    ),
+
+  /** Tạo đơn mua vé và lấy mã VietQR PayOS */
+  createOrderVietQR: (params: {
+    ticketId?: number;
+    quantity: number;
+    unitPrice: number;
+    userId?: number;
+  }) =>
+    api<{
+      success: boolean;
+      data: {
+        orderId: number;
+        orderCode: number;
+        totalAmount: number;
+        checkoutUrl: string;
+        qrCode: string;
+        paymentLinkId: string;
+      };
+    }>("/orders/create", {
       method: "POST",
+      body: JSON.stringify(params),
     }),
+
+  /** Kiểm tra trạng thái đơn hàng theo orderCode */
+  getOrderStatus: (orderCode: number | string) =>
+    api<{
+      success: boolean;
+      data: {
+        id: number;
+        orderCode: string;
+        totalAmount: string;
+        status: "PENDING" | "PAID" | "CANCELLED";
+        solTxSignature: string | null;
+        createdAt: string;
+      };
+    }>(`/orders/${orderCode}/status`, { method: "GET" }),
 
   issueQr: (ticketId: number) =>
     api<{

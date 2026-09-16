@@ -86,7 +86,7 @@ function FeaturedCard({ event }: { event: FeaturedEvent }) {
             {/* CHỢ VÉ NẾU CÓ NGƯỜI PASS */}
             {event.passCount > 0 && (
               <Link
-                to="/marketplace"
+                to={`/events/${event.id}/resale`}
                 className="inline-flex h-8 items-center gap-1 rounded-lg border border-zinc-700 bg-zinc-900/50 px-2.5 text-[11px] font-medium text-zinc-300 hover:border-zinc-600 hover:text-white transition-colors"
               >
                 <RefreshCw className="h-3 w-3 text-zinc-500" />
@@ -94,26 +94,20 @@ function FeaturedCard({ event }: { event: FeaturedEvent }) {
               </Link>
             )}
 
-            {/* MUA VÉ CHÍNH THỨC */}
-            <a
-              href={event.officialLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-colors ${
-                event.ticketsAvailable
-                  ? "bg-[#F97316] hover:bg-[#ea6d0e] text-white"
-                  : "border border-zinc-700 bg-zinc-900/50 text-zinc-500 cursor-not-allowed"
-              }`}
-            >
-              {event.ticketsAvailable ? (
-                <>
-                  Mua vé
-                  <ExternalLink className="h-3 w-3" />
-                </>
-              ) : (
-                "Hết vé"
-              )}
-            </a>
+            {/* MUA VÉ TRỰC TIẾP */}
+            {event.ticketsAvailable ? (
+              <Link
+                to={`/events/${event.id}`}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold bg-[#F97316] hover:bg-[#ea6d0e] text-white transition-colors"
+              >
+                Mua vé
+                <ExternalLink className="h-3 w-3" />
+              </Link>
+            ) : (
+              <span className="inline-flex h-8 items-center rounded-lg px-3 text-xs font-semibold border border-zinc-700 bg-zinc-900/50 text-zinc-500 cursor-not-allowed">
+                Hết vé
+              </span>
+            )}
           </div>
         </div>
       </div>

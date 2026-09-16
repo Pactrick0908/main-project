@@ -110,7 +110,7 @@ export class TicketService {
     });
     if (!event) {
       const organizer =
-        (await prisma.user.findFirst({ where: { role: "admin" } })) ??
+        (await prisma.user.findFirst({ where: { role: { name: "admin" } } })) ??
         (await prisma.user.findUnique({ where: { id: params.userId } }));
 
       if (!organizer) {

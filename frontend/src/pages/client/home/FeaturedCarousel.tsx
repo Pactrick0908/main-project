@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Star } from "lucide-react";
 import {
   Carousel,
@@ -5,6 +6,7 @@ import {
   CarouselItem,
   CarouselNext,
   CarouselPrevious,
+  type CarouselApi,
 } from "@/components/ui/carousel";
 import type { FeaturedEvent } from "../../../pages/client/home/FeaturedCard";
 import FeaturedCard from "../../../pages/client/home/FeaturedCard";
@@ -87,6 +89,20 @@ const FEATURED: FeaturedEvent[] = [
 ];
 
 function FeaturedCarousel() {
+  const [api, setApi] = useState<CarouselApi>();
+  const [isHovered, setIsHovered] = useState(false);
+
+  // Tự động next sau mỗi 3.5s và lặp vô tận (loop: true)
+  useEffect(() => {
+    if (!api || isHovered) return;
+
+    const timer = setInterval(() => {
+      api.scrollNext();
+    }, 3500);
+
+    return () => clearInterval(timer);
+  }, [api, isHovered]);
+
   return (
     <section className="border-b border-zinc-800/60">
       <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-12 lg:px-8">
@@ -101,20 +117,29 @@ function FeaturedCarousel() {
         </div>
 
         {/* CAROUSEL */}
-        <Carousel opts={{ align: "start", loop: true }} className="w-full">
-          <CarouselContent className="-ml-4">
-            {FEATURED.map((event) => (
-              <CarouselItem
-                key={event.id}
-                className="pl-4 md:basis-1/2 lg:basis-2/5"
-              >
-                <FeaturedCard event={event} />
-              </CarouselItem>
-            ))}
-          </CarouselContent>
-          <CarouselPrevious className="hidden sm:flex -left-4 border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-white hover:border-zinc-600" />
-          <CarouselNext className="hidden sm:flex -right-4 border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-white hover:border-zinc-600" />
-        </Carousel>
+        <div
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+        >
+          <Carousel
+            opts={{ align: "start", loop: true }}
+            setApi={setApi}
+            className="w-full"
+          >
+            <CarouselContent className="-ml-4">
+              {FEATURED.map((event) => (
+                <CarouselItem
+                  key={event.id}
+                  className="pl-4 md:basis-1/2 lg:basis-2/5"
+                >
+                  <FeaturedCard event={event} />
+                </CarouselItem>
+              ))}
+            </CarouselContent>
+            <CarouselPrevious className="hidden sm:flex -left-4 border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-white hover:border-zinc-600 cursor-pointer" />
+            <CarouselNext className="hidden sm:flex -right-4 border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-white hover:border-zinc-600 cursor-pointer" />
+          </Carousel>
+        </div>
       </div>
     </section>
   );

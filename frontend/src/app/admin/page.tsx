@@ -82,9 +82,9 @@ const Icons = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
     </svg>
   ),
-  SolanaLogo: () => (
-    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-gradient-to-r from-teal-400 to-purple-500 text-slate-950 mr-1.5">
-      SOL
+  TicketLogo: () => (
+    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-orange-500 text-white mr-1.5">
+      VÉ
     </span>
   ),
 };
@@ -658,7 +658,7 @@ export default function AdminDashboardPage() {
             </div>
           )}
 
-          {/* ================= TAB 3: VÉ ĐÃ BÁN (REAL SOLANA DEVNET DATA) ================= */}
+          {/* ================= TAB 3: VÉ ĐÃ BÁN (DỮ LIỆU THỰC TẾ) ================= */}
           {!isLoading && activeTab === 'tickets' && (
             <div className="space-y-6">
               {/* Header & Filter Controls */}
