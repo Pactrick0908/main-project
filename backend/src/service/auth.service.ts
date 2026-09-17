@@ -2,29 +2,59 @@ import type { GoogleJwtPayload } from "../controller/auth.controller.js";
 import { prisma } from "../lib/prisma.js";
 import { generateToken } from "../utils/jwt.js";
 import { WalletService } from "./wallet.service.js";
+import { permissionsForRole } from "../constants/permissions.js";
+import { RbacService } from "./rbac.service.js";
 
 export class AuthService {
-  /** Đảm bảo các role cơ bản tồn tại trong DB và trả về role mặc định */
-  private static async getDefaultRoleId(roleName = "customer"): Promise<number | null> {
+  /** Đảm bảo role tồn tại và trả về id */
+  private static async getDefaultRoleId(
+    roleName = "customer",
+  ): Promise<number | null> {
     try {
-      let role = await prisma.role.findUnique({
-        where: { name: roleName },
-      });
-
-      if (!role) {
-        // Tự động tạo role nếu DB chưa có
-        role = await prisma.role.create({
-          data: {
-            name: roleName,
-            description: roleName === "admin" ? "Quản trị hệ thống" : "Khách mua vé",
-          },
-        });
-      }
-      return role.id;
+      await RbacService.ensureSystemRoles();
+      return await RbacService.getRoleId(roleName);
     } catch (e) {
       console.warn("Không thể kiểm tra/tạo Role trong DB:", e);
       return null;
     }
+  }
+
+  private static buildSession(user: {
+    id: number;
+    googleId: string;
+    fullName: string;
+    email: string;
+    avatarUrl: string | null;
+    walletAddress: string;
+    role?: { name: string } | null;
+  }) {
+    const roleName = user.role?.name ?? "customer";
+    const permissions = permissionsForRole(roleName);
+
+    return (async () => {
+      const token = await generateToken({
+        googleId: user.googleId,
+        email: user.email,
+        walletAddress: user.walletAddress,
+        role: roleName,
+        userId: user.id,
+        permissions,
+      });
+
+      return {
+        token,
+        user: {
+          id: user.id,
+          googleId: user.googleId,
+          name: user.fullName,
+          email: user.email,
+          avatar: user.avatarUrl ?? "",
+          walletAddress: user.walletAddress,
+          role: roleName,
+          permissions,
+        },
+      };
+    })();
   }
 
   static async login(userInfo: GoogleJwtPayload) {
@@ -39,20 +69,27 @@ export class AuthService {
       include: { role: true },
     });
 
-    const defaultRoleId = existing?.roleId ?? (await this.getDefaultRoleId("customer"));
+    // Giữ nguyên role đã được admin gán; user mới → customer
+    const defaultRoleId =
+      existing?.roleId ?? (await this.getDefaultRoleId("customer"));
 
     const userData = {
       fullName: userInfo.name || "Người dùng Solana",
       email: userInfo.email,
       avatarUrl: userInfo.picture ?? "",
       walletAddress,
-      ...(defaultRoleId ? { roleId: defaultRoleId } : {}),
+      ...(defaultRoleId && !existing ? { roleId: defaultRoleId } : {}),
     };
 
     const user = existing
       ? await prisma.user.update({
           where: { id: existing.id },
-          data: userData,
+          data: {
+            fullName: userData.fullName,
+            email: userData.email,
+            avatarUrl: userData.avatarUrl,
+            walletAddress: userData.walletAddress,
+          },
           include: { role: true },
         })
       : await prisma.user.create({
@@ -63,28 +100,7 @@ export class AuthService {
           include: { role: true },
         });
 
-    const roleName = user.role?.name ?? "customer";
-
-    const token = await generateToken({
-      googleId: user.googleId,
-      email: user.email,
-      walletAddress: user.walletAddress,
-      role: roleName,
-      userId: user.id,
-    });
-
-    return {
-      token,
-      user: {
-        id: user.id,
-        googleId: user.googleId,
-        name: user.fullName,
-        email: user.email,
-        avatar: user.avatarUrl,
-        walletAddress: user.walletAddress,
-        role: roleName,
-      },
-    };
+    return this.buildSession(user);
   }
 
   /** Tài khoản thử nghiệm — không cần Google, để test Dynamic QR. */
@@ -100,9 +116,8 @@ export class AuthService {
 
   /** Đăng nhập admin demo — tự gắn role admin. */
   static async loginAdminDemo() {
+    await RbacService.ensureSystemRoles();
     const adminRoleId = await this.getDefaultRoleId("admin");
-    await this.getDefaultRoleId("customer");
-    await this.getDefaultRoleId("scanner");
 
     if (!adminRoleId) {
       throw new Error("Không tạo được role admin");
@@ -141,26 +156,6 @@ export class AuthService {
           include: { role: true },
         });
 
-    const roleName = user.role?.name ?? "admin";
-    const token = await generateToken({
-      googleId: user.googleId,
-      email: user.email,
-      walletAddress: user.walletAddress,
-      role: roleName,
-      userId: user.id,
-    });
-
-    return {
-      token,
-      user: {
-        id: user.id,
-        googleId: user.googleId,
-        name: user.fullName,
-        email: user.email,
-        avatar: user.avatarUrl,
-        walletAddress: user.walletAddress,
-        role: roleName,
-      },
-    };
+    return this.buildSession(user);
   }
 }

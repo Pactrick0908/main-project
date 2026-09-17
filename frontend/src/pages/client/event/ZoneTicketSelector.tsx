@@ -1,5 +1,5 @@
 ﻿import { CheckCircle2, Armchair, QrCode, Check, Sparkles } from "lucide-react";
-import type { DetailedEvent } from "@/data/events.data";
+import { zoneNeedsSeats, type DetailedEvent } from "@/data/events.data";
 
 interface ZoneTicketSelectorProps {
   event: DetailedEvent;
@@ -30,6 +30,11 @@ export default function ZoneTicketSelector({
   onSelectZone,
   onBuyTicket,
 }: ZoneTicketSelectorProps) {
+  const seatedTicketCount = event.zones.reduce((sum, zone) => {
+    if (!zoneNeedsSeats(zone)) return sum;
+    return sum + (selectedQuantities[zone.id] || 0);
+  }, 0);
+
   return (
     <div className="flex flex-col justify-between rounded-xl border border-zinc-800 bg-[#12131A] p-3.5 sm:p-4 space-y-4">
       <div>
@@ -47,6 +52,7 @@ export default function ZoneTicketSelector({
           {event.zones.map((zone) => {
             const qty = selectedQuantities[zone.id] || 0;
             const isSelected = qty > 0;
+            const standing = !zoneNeedsSeats(zone);
 
             return (
               <div
@@ -58,7 +64,6 @@ export default function ZoneTicketSelector({
                     : "border-zinc-800 bg-zinc-900/60 hover:border-zinc-700"
                 }`}
               >
-                {/* Cột trái: Tên, Màu sắc, Giá & Quyền lợi */}
                 <div className="flex items-start gap-2.5 flex-1 min-w-0">
                   <div
                     className="h-8 w-1 rounded-full shrink-0 mt-0.5"
@@ -67,6 +72,11 @@ export default function ZoneTicketSelector({
                   <div className="min-w-0">
                     <h3 className="text-xs font-bold text-white truncate">
                       {zone.name}
+                      {standing && (
+                        <span className="ml-1.5 text-[10px] font-semibold text-zinc-400">
+                          · Đứng / GA
+                        </span>
+                      )}
                     </h3>
                     <div className="text-xs font-extrabold text-[#F97316] mt-0.5">
                       {formatVND(zone.price)}
@@ -74,14 +84,15 @@ export default function ZoneTicketSelector({
                     <div className="text-[10px] text-zinc-400 mt-0.5 flex items-center gap-1 line-clamp-1">
                       <CheckCircle2 className="h-2.5 w-2.5 text-emerald-400 shrink-0" />
                       <span>
-                        {zone.benefits?.[0] ||
-                          "Bao gồm quyền vào cửa và check-in QR"}
+                        {standing
+                          ? "Vé đứng — vào cửa theo khu vực, không chọn ghế"
+                          : zone.benefits?.[0] ||
+                            "Bao gồm quyền vào cửa và check-in QR"}
                       </span>
                     </div>
                   </div>
                 </div>
 
-                {/* Bộ đếm số lượng vé (+ / -) */}
                 <div className="flex items-center gap-1.5 shrink-0 bg-zinc-950/80 p-0.5 rounded-lg border border-zinc-800">
                   <button
                     type="button"
@@ -115,22 +126,28 @@ export default function ZoneTicketSelector({
         </div>
       </div>
 
-      {/* TỔNG KẾT & THANH TOÁN */}
       <div className="space-y-3 pt-3 border-t border-zinc-800">
-        {/* Danh sách ghế đã chọn theo khu vực */}
         {totalTickets > 0 && (
           <div className="rounded-lg bg-zinc-950 p-2.5 border border-zinc-800 space-y-2 text-[11px]">
             <div className="flex items-center justify-between border-b border-zinc-800/80 pb-1.5">
               <span className="text-zinc-300 font-bold flex items-center gap-1.5">
                 <Armchair className="h-3.5 w-3.5 text-[#F97316]" />
-                Chỗ ngồi theo từng khu vực:
+                {seatedTicketCount > 0
+                  ? "Chỗ ngồi theo từng khu vực:"
+                  : "Vé đã chọn:"}
               </span>
-              <span className="text-[10px] text-zinc-400">
-                Đã chọn:{" "}
-                <strong className="text-white">
-                  {allSelectedSeats.length}/{totalTickets} ghế
-                </strong>
-              </span>
+              {seatedTicketCount > 0 ? (
+                <span className="text-[10px] text-zinc-400">
+                  Đã chọn:{" "}
+                  <strong className="text-white">
+                    {allSelectedSeats.length}/{seatedTicketCount} ghế
+                  </strong>
+                </span>
+              ) : (
+                <span className="text-[10px] text-emerald-400 font-medium">
+                  Không cần chọn ghế
+                </span>
+              )}
             </div>
 
             <div className="space-y-1">
@@ -139,6 +156,7 @@ export default function ZoneTicketSelector({
                 if (qty === 0) return null;
                 const seats = selectedSeatsByZone[zone.id] || [];
                 const isCurrent = activeZoneId === zone.id;
+                const standing = !zoneNeedsSeats(zone);
 
                 return (
                   <div
@@ -149,7 +167,11 @@ export default function ZoneTicketSelector({
                         ? "bg-zinc-900 border border-[#F97316]/50 shadow-sm"
                         : "bg-zinc-900/40 hover:bg-zinc-900 border border-transparent"
                     }`}
-                    title="Bấm để chuyển sang xem và chọn ghế khu vực này"
+                    title={
+                      standing
+                        ? "Vé đứng — không chọn ghế"
+                        : "Bấm để chuyển sang xem và chọn ghế khu vực này"
+                    }
                   >
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span
@@ -161,7 +183,11 @@ export default function ZoneTicketSelector({
                       </span>
                     </div>
                     <div className="flex flex-wrap gap-1 shrink-0 ml-2">
-                      {seats.length > 0 ? (
+                      {standing ? (
+                        <span className="text-emerald-400 text-[10px] font-medium">
+                          GA — không chọn ghế
+                        </span>
+                      ) : seats.length > 0 ? (
                         seats.map((s) => (
                           <span
                             key={s}
@@ -183,7 +209,6 @@ export default function ZoneTicketSelector({
           </div>
         )}
 
-        {/* Cổng thanh toán VietQR */}
         <div className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2.5">
           <div className="flex items-center gap-2">
             <div className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-500/20 text-emerald-400">
@@ -201,7 +226,6 @@ export default function ZoneTicketSelector({
           </div>
         </div>
 
-        {/* Khung tổng tiền & Nút Mua vé */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg bg-zinc-950 p-3 border border-zinc-800">
           <div>
             <div className="text-[11px] text-zinc-400">

@@ -12,6 +12,7 @@ import {
   EVENTS_DATA,
   type DetailedEvent,
   type EventArtist,
+  zoneNeedsSeats,
 } from "@/data/events.data";
 import { getResaleTicketsByEventId } from "@/pages/client/market/marketplace.data";
 import { useAuth } from "@/context/AuthContext";
@@ -206,8 +207,11 @@ export default function EventDetailPage() {
   // Tăng giảm số lượng vé cho từng hạng vé
   const handleQuantityChange = (zoneId: string, delta: number) => {
     setActiveZoneId(zoneId);
-    // Khi tăng vé > 0, tự động chuyển sang Bảng chọn ghế ngồi
-    setShowOverviewMap(false);
+    const zone = event.zones.find((z) => z.id === zoneId);
+    // Chỉ mở bảng chọn ghế khi zone có chỗ ngồi
+    if (zone && zoneNeedsSeats(zone)) {
+      setShowOverviewMap(false);
+    }
 
     setSelectedQuantities((prev) => {
       const current = prev[zoneId] || 0;
@@ -230,6 +234,10 @@ export default function EventDetailPage() {
     event.zones.find((z) => z.id === activeZoneId) || event.zones[0];
   const activeZoneTickets = selectedQuantities[activeZone.id] || 0;
   const activeZoneSeats = selectedSeatsByZone[activeZone.id] || [];
+  const activeNeedsSeats = zoneNeedsSeats(activeZone);
+  const anySeatedWithQty = event.zones.some(
+    (z) => zoneNeedsSeats(z) && (selectedQuantities[z.id] || 0) > 0,
+  );
 
   // Toàn bộ danh sách ghế đã chọn của mọi khu vực
   const allSelectedSeats = useMemo(() => {
@@ -265,6 +273,15 @@ export default function EventDetailPage() {
       event.zones.forEach((z: any) => {
         const qty = selectedQuantities[z.id] || 0;
         const currentSeats = next[z.id] || [];
+
+        // Vé đứng / GA: không gán ghế
+        if (!zoneNeedsSeats(z)) {
+          if (currentSeats.length > 0) {
+            next[z.id] = [];
+            changed = true;
+          }
+          return;
+        }
 
         if (qty === 0) {
           if (currentSeats.length > 0) {
@@ -382,12 +399,17 @@ export default function EventDetailPage() {
       return;
     }
 
-    // Build items với ghế (auto-pick sync nếu thiếu)
+    // Build items với ghế (auto-pick sync nếu thiếu) — vé đứng gửi seatLabels rỗng
     const itemsFinal = event.zones
       .map((z) => {
         const quantity = selectedQuantities[z.id] || 0;
         if (quantity < 1) return null;
         const eventZoneId = Number((z as any).eventZoneId ?? z.id);
+
+        if (!zoneNeedsSeats(z)) {
+          return { eventZoneId, quantity, seatLabels: [] as string[] };
+        }
+
         let seatLabels = [...(selectedSeatsByZone[z.id] || [])];
         if (seatLabels.length < quantity) {
           const cfg = getZoneSeatConfig(
@@ -622,14 +644,17 @@ export default function EventDetailPage() {
             - KHI TĂNG SỐ LƯỢNG VÉ > 0: HIỆN BẢNG CHỌN CHỖ NGỒI (A1, A2...)
             - KHI SỐ LƯỢNG = 0 HOẶC XEM TOÀN CẢNH: HIỆN ẢNH SƠ ĐỒ KHÁN ĐÀI */}
         <div className="lg:col-span-8 space-y-4">
-          {totalTickets > 0 && !showOverviewMap ? (
+          {totalTickets > 0 && !showOverviewMap && activeNeedsSeats ? (
             <SeatSelectionBoard
               activeZoneId={activeZone.id}
               zoneName={activeZone.name}
               zoneColor={activeZone.color}
               zoneTickets={activeZoneTickets}
               selectedSeats={activeZoneSeats}
-              allZones={allZonesTabInfo}
+              allZones={allZonesTabInfo.filter((tab) => {
+                const z = event.zones.find((zone) => zone.id === tab.id);
+                return z ? zoneNeedsSeats(z) : true;
+              })}
               totalSeats={
                 (activeZone as any).totalSeats ||
                 (activeZone as any).available ||
@@ -639,7 +664,12 @@ export default function EventDetailPage() {
               occupiedSeats={(activeZone as any).soldSeats || []}
               onSwitchZone={(newZoneId) => {
                 setActiveZoneId(newZoneId);
-                setShowOverviewMap(false);
+                const nextZone = event.zones.find((z) => z.id === newZoneId);
+                if (nextZone && zoneNeedsSeats(nextZone)) {
+                  setShowOverviewMap(false);
+                } else {
+                  setShowOverviewMap(true);
+                }
               }}
               onSelectSeat={(seatId) =>
                 handleSelectSeatForZone(activeZone.id, seatId)
@@ -655,6 +685,7 @@ export default function EventDetailPage() {
               totalTickets={totalTickets}
               allSelectedSeats={allSelectedSeats}
               isZoomed={isZoomed}
+              needsSeatSelection={anySeatedWithQty}
               onToggleZoom={() => setIsZoomed(!isZoomed)}
               onOpenSeatBoard={() => setShowOverviewMap(false)}
             />
@@ -674,7 +705,15 @@ export default function EventDetailPage() {
             isProcessing={isProcessing}
             formatVND={formatVND}
             onQuantityChange={handleQuantityChange}
-            onSelectZone={(zoneId) => setActiveZoneId(zoneId)}
+            onSelectZone={(zoneId) => {
+              setActiveZoneId(zoneId);
+              const z = event.zones.find((zone) => zone.id === zoneId);
+              if (z && zoneNeedsSeats(z) && (selectedQuantities[zoneId] || 0) > 0) {
+                setShowOverviewMap(false);
+              } else if (z && !zoneNeedsSeats(z)) {
+                setShowOverviewMap(true);
+              }
+            }}
             onBuyTicket={handleBuyTicket}
           />
         </div>

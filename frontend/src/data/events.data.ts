@@ -15,12 +15,33 @@ export interface EventZone {
   available: number;
   color: string;
   benefits: string[];
+  /** false = vé đứng / GA — không chọn ghế */
+  hasSeats?: boolean;
   /** Tổng ghế khu vực — lấy từ EventZone.totalSeats trên DB */
   totalSeats?: number;
   /** Số hàng ghế — lấy từ event_zones.row */
   rowCount?: number;
   /** Ghế đã bán (có ticket gắn seatId) — ẩn trên sơ đồ */
   soldSeats?: string[];
+}
+
+/** Vé ngồi cần chọn ghế; vé đứng / GA thì không. */
+export function zoneNeedsSeats(zone: {
+  hasSeats?: boolean;
+  name?: string;
+}): boolean {
+  if (zone.hasSeats === false) return false;
+  if (zone.hasSeats === true) return true;
+  const name = (zone.name || "").toUpperCase();
+  if (
+    name.includes("ĐỨNG") ||
+    name.includes("STANDING") ||
+    name.includes("FANZONE") ||
+    /\bGA\b/.test(name)
+  ) {
+    return false;
+  }
+  return true;
 }
 
 export interface DetailedEvent {
@@ -81,6 +102,7 @@ export const EVENTS_DATA: Record<number, DetailedEvent> = {
         solPrice: 0.51,
         available: 120,
         color: "#EAB308",
+        hasSeats: false,
         benefits: ["Khu vực đứng sát sàn catwalk", "Lối vào ưu tiên", "Bao gồm vòng tay vải RFID lưu niệm"],
       },
       {
@@ -141,6 +163,7 @@ export const EVENTS_DATA: Record<number, DetailedEvent> = {
         solPrice: 1.13,
         available: 95,
         color: "#8B5CF6",
+        hasSeats: false,
         benefits: ["Khu vực đứng gần nhất", "Vòng tay kỷ niệm"],
       },
       {

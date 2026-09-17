@@ -8,6 +8,7 @@ export interface AuthUser {
   avatar: string;
   walletAddress: string;
   role?: string;
+  permissions?: string[];
 }
 
 export interface AuthSession {

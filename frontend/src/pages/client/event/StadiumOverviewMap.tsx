@@ -6,6 +6,8 @@ interface StadiumOverviewMapProps {
   totalTickets: number;
   allSelectedSeats: string[];
   isZoomed: boolean;
+  /** false khi chỉ mua vé đứng / GA — ẩn CTA chọn ghế */
+  needsSeatSelection?: boolean;
   onToggleZoom: () => void;
   onOpenSeatBoard: () => void;
 }
@@ -15,6 +17,7 @@ export default function StadiumOverviewMap({
   totalTickets,
   allSelectedSeats,
   isZoomed,
+  needsSeatSelection = true,
   onToggleZoom,
   onOpenSeatBoard,
 }: StadiumOverviewMapProps) {
@@ -64,7 +67,7 @@ export default function StadiumOverviewMap({
           )}
         </div>
 
-        {totalTickets > 0 && (
+        {totalTickets > 0 && needsSeatSelection && (
           <button
             type="button"
             onClick={onOpenSeatBoard}
@@ -73,6 +76,11 @@ export default function StadiumOverviewMap({
             <Armchair className="h-3.5 w-3.5" />
             Bảng chọn ghế ({allSelectedSeats.length}/{totalTickets})
           </button>
+        )}
+        {totalTickets > 0 && !needsSeatSelection && (
+          <span className="shrink-0 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-300">
+            Vé đứng — không chọn ghế
+          </span>
         )}
       </div>
 
@@ -119,17 +127,19 @@ export default function StadiumOverviewMap({
         <div className="mt-3.5 rounded-xl border border-dashed border-orange-500/40 bg-orange-500/10 p-3 text-center text-xs text-orange-300 flex items-center justify-center gap-2">
           <Sparkles className="h-4 w-4 text-[#F97316] shrink-0" />
           <span>
-            👉 Hãy bấm nút <strong>(+)</strong> chọn số lượng vé ở cột bên phải để mở{" "}
-            <strong>Bảng chọn chỗ ngồi theo khu vực (SVIP, VIP, CAT...)</strong>!
+            👉 Hãy bấm nút <strong>(+)</strong> chọn số lượng vé ở cột bên phải.
+            Vé ngồi sẽ mở bảng chọn ghế; vé đứng / GA không cần chọn chỗ.
           </span>
         </div>
-      ) : (
+      ) : needsSeatSelection ? (
         <div className="mt-3.5 flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-900/70 p-3">
           <div className="text-xs text-zinc-300 flex items-center gap-2">
             <Armchair className="h-4 w-4 text-[#F97316]" />
             <span>
               Đang chọn {totalTickets} vé:{" "}
-              {allSelectedSeats.length > 0 ? allSelectedSeats.join(", ") : "Chưa chọn ghế"}
+              {allSelectedSeats.length > 0
+                ? allSelectedSeats.join(", ")
+                : "Chưa chọn ghế"}
             </span>
           </div>
           <button
@@ -139,6 +149,10 @@ export default function StadiumOverviewMap({
           >
             Chọn ghế theo khu vực
           </button>
+        </div>
+      ) : (
+        <div className="mt-3.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-center text-xs text-emerald-300">
+          Bạn đang chọn vé đứng / GA — vào cửa theo khu vực, không cần chọn ghế.
         </div>
       )}
     </div>

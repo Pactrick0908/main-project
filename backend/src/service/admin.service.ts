@@ -3,7 +3,13 @@ import { WalletService } from "./wallet.service.js";
 import { TicketService } from "./ticket.service.js";
 
 export class AdminService {
-  static async getDashboard() {
+  static async getDashboard(opts?: {
+    includeRevenue?: boolean;
+    includeOps?: boolean;
+  }) {
+    const includeRevenue = opts?.includeRevenue !== false;
+    const includeOps = opts?.includeOps !== false;
+
     const [
       soldTickets,
       checkedIn,
@@ -14,66 +20,113 @@ export class AdminService {
       balance,
       paidOrders,
     ] = await Promise.all([
-      prisma.ticket.count({
-        where: { status: { in: ["sold", "checked_in", "valid"] } },
-      }),
-      prisma.ticket.count({ where: { status: "checked_in" } }),
-      prisma.ticket.count({ where: { status: "revoked" } }),
-      prisma.event.count({
-        where: { status: { in: ["open", "active", "published"] } },
-      }),
-      prisma.event.count(),
-      prisma.ticket.findMany({
-        where: { status: { in: ["sold", "checked_in", "valid", "revoked"] } },
-        include: {
-          event: true,
-          eventZone: { include: { zone: true } },
-          seat: true,
-          user: true,
-        },
-        orderBy: { id: "desc" },
-        take: 8,
-      }),
-      prisma.adminBalance.findFirst({ orderBy: { id: "asc" } }),
-      prisma.order.aggregate({
-        where: { status: "PAID" },
-        _sum: { totalAmount: true, adminAmount: true, systemAmount: true },
-        _count: true,
-      }),
+      includeOps
+        ? prisma.ticket.count({
+            where: { status: { in: ["sold", "checked_in", "valid"] } },
+          })
+        : Promise.resolve(0),
+      includeOps
+        ? prisma.ticket.count({ where: { status: "checked_in" } })
+        : Promise.resolve(0),
+      includeOps
+        ? prisma.ticket.count({ where: { status: "revoked" } })
+        : Promise.resolve(0),
+      includeOps
+        ? prisma.event.count({
+            where: { status: { in: ["open", "active", "published"] } },
+          })
+        : Promise.resolve(0),
+      includeOps ? prisma.event.count() : Promise.resolve(0),
+      includeOps
+        ? prisma.ticket.findMany({
+            where: {
+              status: { in: ["sold", "checked_in", "valid", "revoked"] },
+            },
+            include: {
+              event: true,
+              eventZone: { include: { zone: true } },
+              seat: true,
+              user: true,
+            },
+            orderBy: { id: "desc" },
+            take: 8,
+          })
+        : Promise.resolve([]),
+      includeRevenue
+        ? prisma.adminBalance.findFirst({ orderBy: { id: "asc" } })
+        : Promise.resolve(null),
+      includeRevenue
+        ? prisma.order.aggregate({
+            where: { status: "PAID" },
+            _sum: {
+              totalAmount: true,
+              adminAmount: true,
+              systemAmount: true,
+            },
+            _count: true,
+          })
+        : Promise.resolve({
+            _count: 0,
+            _sum: {
+              totalAmount: null,
+              adminAmount: null,
+              systemAmount: null,
+            },
+          }),
     ]);
 
-    const ticketRevenue = await prisma.ticket.findMany({
-      where: { status: { in: ["sold", "checked_in", "valid"] } },
-      select: { eventZone: { select: { price: true } } },
-    });
-    const revenueFromTickets = ticketRevenue.reduce(
-      (sum, t) => sum + Number(t.eventZone.price),
-      0,
-    );
+    let revenueFromTickets = 0;
+    if (includeRevenue) {
+      const ticketRevenue = await prisma.ticket.findMany({
+        where: { status: { in: ["sold", "checked_in", "valid"] } },
+        select: { eventZone: { select: { price: true } } },
+      });
+      revenueFromTickets = ticketRevenue.reduce(
+        (sum, t) => sum + Number(t.eventZone.price),
+        0,
+      );
+    }
 
     return {
-      soldTickets,
-      checkedIn,
-      revoked,
-      checkInRate: soldTickets ? Math.round((checkedIn / soldTickets) * 100) : 0,
-      eventsActive,
-      eventsTotal,
-      revenue: Number(balance?.totalRevenue ?? revenueFromTickets),
-      systemRevenue: Number(balance?.systemRevenue ?? 0),
-      paidOrders: paidOrders._count,
-      orderRevenue: Number(paidOrders._sum.totalAmount ?? 0),
-      recentTickets: recentTickets.map((t) => ({
-        id: t.id,
-        status: t.status,
-        ownerWallet: t.ownerWallet,
-        checkedInAt: t.checkedInAt,
-        isCheckedIn: Boolean(t.checkedInAt) || t.status === "checked_in",
-        event: { id: t.event.id, title: t.event.title },
-        zoneName: t.eventZone.zone.name,
-        price: Number(t.eventZone.price),
-        ownerName: t.user?.fullName ?? null,
-        ownerEmail: t.user?.email ?? null,
-      })),
+      soldTickets: includeOps ? soldTickets : undefined,
+      checkedIn: includeOps ? checkedIn : undefined,
+      revoked: includeOps ? revoked : undefined,
+      checkInRate:
+        includeOps && soldTickets
+          ? Math.round((checkedIn / soldTickets) * 100)
+          : includeOps
+            ? 0
+            : undefined,
+      eventsActive: includeOps ? eventsActive : undefined,
+      eventsTotal: includeOps ? eventsTotal : undefined,
+      revenue: includeRevenue
+        ? Number(balance?.totalRevenue ?? revenueFromTickets)
+        : undefined,
+      systemRevenue: includeRevenue
+        ? Number(balance?.systemRevenue ?? 0)
+        : undefined,
+      paidOrders: includeRevenue ? paidOrders._count : undefined,
+      orderRevenue: includeRevenue
+        ? Number(paidOrders._sum.totalAmount ?? 0)
+        : undefined,
+      recentTickets: includeOps
+        ? recentTickets.map((t) => ({
+            id: t.id,
+            status: t.status,
+            ownerWallet: t.ownerWallet,
+            checkedInAt: t.checkedInAt,
+            isCheckedIn: Boolean(t.checkedInAt) || t.status === "checked_in",
+            event: { id: t.event.id, title: t.event.title },
+            zoneName: t.eventZone.zone.name,
+            price: Number(t.eventZone.price),
+            ownerName: t.user?.fullName ?? null,
+            ownerEmail: t.user?.email ?? null,
+          }))
+        : [],
+      permissions: {
+        revenue: includeRevenue,
+        ops: includeOps,
+      },
     };
   }
 
