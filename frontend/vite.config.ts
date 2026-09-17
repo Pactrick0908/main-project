@@ -16,7 +16,7 @@ export default defineConfig({
     strictPort: true, // Báo lỗi ngay nếu 5173 bị chiếm, thay vì nhảy port
     proxy: {
       "/api": {
-        target: "http://localhost:5000",
+        target: "http://localhost:6000",
         changeOrigin: true,
       },
     },

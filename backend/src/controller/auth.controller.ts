@@ -51,3 +51,20 @@ export const loginDemo = async (_req: Request, res: Response) => {
     });
   }
 };
+
+export const loginAdminDemo = async (_req: Request, res: Response) => {
+  try {
+    const result = await AuthService.loginAdminDemo();
+    return res.status(200).json({
+      success: true,
+      message: "Đăng nhập admin demo thành công!",
+      data: result,
+    });
+  } catch (error: any) {
+    console.error("Admin demo login error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error?.message ?? "Không đăng nhập admin được",
+    });
+  }
+};

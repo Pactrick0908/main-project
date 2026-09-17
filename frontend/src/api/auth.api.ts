@@ -17,7 +17,7 @@ export interface AuthSession {
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5000/api/v1";
+const API_BASE = import.meta.env.VITE_API_URL ?? "/api/v1";
 
 // ─── LocalStorage helpers ────────────────────────────────────────────────────
 
@@ -76,4 +76,7 @@ export const authApi = {
 
   /** Đăng nhập demo — không cần Google */
   loginDemo: () => post<AuthSession>("/auth/demo"),
+
+  /** Đăng nhập admin demo */
+  loginAdminDemo: () => post<AuthSession>("/auth/admin-demo"),
 };

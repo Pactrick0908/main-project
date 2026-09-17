@@ -30,18 +30,29 @@ export default function TicketCard({
                 : "bg-emerald-500/20 text-emerald-200"
             }`}
           >
-            {ticket.isCheckedIn ? "Đã check-in" : "Hợp lệ"}
+            {ticket.isCheckedIn ? "Đã check-in" : "Trong ví"}
           </span>
         </div>
         <p className="mt-2 text-sm text-white/55">
           {ticket.zoneName}
-          {ticket.seatLabel ? ` · ${ticket.seatLabel}` : ""} · {formatVND(ticket.price)}
+          {ticket.seatLabel ? ` · ${ticket.seatLabel}` : ""} ·{" "}
+          {formatVND(ticket.price)}
         </p>
+        {ticket.mintAddress && (
+          <p className="mt-1.5 font-mono text-[11px] text-[#F97316]/90">
+            Mã vé: {ticket.mintAddress}
+          </p>
+        )}
+        {ticket.ownerWallet && (
+          <p className="mt-0.5 truncate font-mono text-[10px] text-white/35">
+            Ví: {ticket.ownerWallet.slice(0, 8)}…{ticket.ownerWallet.slice(-6)}
+          </p>
+        )}
         <button
           type="button"
           disabled={ticket.isCheckedIn}
           onClick={() => onSelect(ticket)}
-          className="mt-4 w-full rounded-xl bg-white py-2.5 text-sm font-semibold text-black hover:bg-white/90 disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/40 cursor-pointer transition-colors"
+          className="mt-4 w-full cursor-pointer rounded-xl bg-white py-2.5 text-sm font-semibold text-black transition-colors hover:bg-white/90 disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/40"
         >
           {ticket.isCheckedIn ? "Vé đã dùng" : "Hiện mã QR check-in"}
         </button>

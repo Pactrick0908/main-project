@@ -2,12 +2,18 @@ import { getToken } from "./auth.api";
 import type { DetailedEvent, EventZone } from "@/data/events.data";
 
 const API_BASE =
-  import.meta.env.VITE_API_URL ?? "http://localhost:5000/api/v1";
+  import.meta.env.VITE_API_URL ?? "/api/v1";
 
 export interface EventZoneDto extends EventZone {
   eventZoneId?: number;
   zoneId?: number;
   totalSeats?: number;
+  /** Số hàng ghế (event_zones.row) — layout = total_seats / row */
+  rowCount?: number;
+  row?: number | null;
+  /** Ghế đã có ticket.seatId — ẩn trên sơ đồ (vd ["A1","B3"]) */
+  soldSeats?: string[];
+  hasSeats?: boolean;
 }
 
 export interface EventDto extends DetailedEvent {

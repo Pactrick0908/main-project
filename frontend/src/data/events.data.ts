@@ -6,6 +6,12 @@ export interface EventZone {
   available: number;
   color: string;
   benefits: string[];
+  /** Tổng ghế khu vực — lấy từ EventZone.totalSeats trên DB */
+  totalSeats?: number;
+  /** Số hàng ghế — lấy từ event_zones.row */
+  rowCount?: number;
+  /** Ghế đã bán (có ticket gắn seatId) — ẩn trên sơ đồ */
+  soldSeats?: string[];
 }
 
 export interface DetailedEvent {
@@ -22,6 +28,10 @@ export interface DetailedEvent {
   city: string;
   description: string;
   organizer: string;
+  /** Ảnh logo nhà tổ chức */
+  logoUrl?: string;
+  /** Ảnh sơ đồ chỗ ngồi */
+  mapUrl?: string;
   ticketsAvailable: boolean;
   zones: EventZone[];
   rules: string[];

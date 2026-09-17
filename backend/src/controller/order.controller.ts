@@ -7,7 +7,7 @@ import { OrderService } from "../service/order.service.js";
  */
 export const createOrder = async (req: Request, res: Response) => {
   try {
-    const { ticketId, quantity, unitPrice, userId } = req.body;
+    const { eventId, items, ticketId, quantity, unitPrice, userId } = req.body;
 
     const effectiveUserId = userId || req.auth?.userId;
     if (!effectiveUserId) {
@@ -17,8 +17,34 @@ export const createOrder = async (req: Request, res: Response) => {
       });
     }
 
+    // Hỗ trợ payload mới (eventId + items) và fallback legacy
+    let orderItems = items as
+      | Array<{
+          eventZoneId: number;
+          quantity: number;
+          seatLabels?: string[];
+        }>
+      | undefined;
+
+    if (!orderItems?.length && ticketId && quantity) {
+      // Legacy: không đủ để fulfill — từ chối rõ ràng
+      return res.status(400).json({
+        success: false,
+        message: "Cần gửi eventId và items (eventZoneId, quantity, seatLabels)",
+      });
+    }
+
+    if (!eventId || !orderItems?.length) {
+      return res.status(400).json({
+        success: false,
+        message: "Thiếu eventId hoặc items",
+      });
+    }
+
     const orderData = await OrderService.createOrder({
       userId: Number(effectiveUserId),
+      eventId: Number(eventId),
+      items: orderItems,
       ticketId,
       quantity,
       unitPrice,
@@ -31,7 +57,7 @@ export const createOrder = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error("createOrder controller error:", error);
-    return res.status(500).json({
+    return res.status(error?.status ?? 500).json({
       success: false,
       message: error?.message || "Không thể tạo liên kết thanh toán VietQR",
     });

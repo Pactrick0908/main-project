@@ -1,7 +1,12 @@
 import { createBrowserRouter } from "react-router-dom";
 import LoginPage from "@/pages/auth/LoginPage";
 import HomePage from "@/pages/client/home/HomePage";
-import AdminPage from "@/pages/admin/AdminPage";
+import Dashboard from "@/pages/admin/Dashboard";
+import PlacePage from "@/pages/admin/PlacePage";
+import OrganizerPage from "@/pages/admin/OrganizerPage";
+import EventPage from "@/pages/admin/EventPage";
+import TicketPage from "@/pages/admin/TicketPage";
+import AirdropPage from "@/pages/admin/AirdropPage";
 import MainLayout from "@/layouts/client/MainLayout";
 import LoginLayout from "@/layouts/auth/LoginLayout";
 import MarketplacePage from "@/pages/client/market/MarketplacePage";
@@ -58,7 +63,27 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <AdminPage />,
+        element: <Dashboard />,
+      },
+      {
+        path: "places",
+        element: <PlacePage />,
+      },
+      {
+        path: "organizers",
+        element: <OrganizerPage />,
+      },
+      {
+        path: "events",
+        element: <EventPage />,
+      },
+      {
+        path: "tickets",
+        element: <TicketPage />,
+      },
+      {
+        path: "airdrop",
+        element: <AirdropPage />,
       },
       {
         path: "scanner",

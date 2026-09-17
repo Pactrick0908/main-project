@@ -67,3 +67,23 @@ export function requireScanner(req: Request, res: Response, next: NextFunction) 
     message: "Cần quyền scanner/admin hoặc mã cổng hợp lệ",
   });
 }
+
+/** Admin only — JWT role admin (dev: cho phép nếu đã đăng nhập) */
+export function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  const header = req.headers.authorization;
+  if (!header?.startsWith("Bearer ")) {
+    return res.status(401).json({ success: false, message: "Chưa đăng nhập" });
+  }
+
+  try {
+    const payload = jwt.verify(header.slice(7), JWT_SECRET) as AuthUser;
+    req.auth = payload;
+    if (payload.role === "admin") return next();
+    if (process.env.NODE_ENV !== "production") return next();
+    return res.status(403).json({ success: false, message: "Cần quyền admin" });
+  } catch {
+    return res
+      .status(401)
+      .json({ success: false, message: "Token không hợp lệ hoặc đã hết hạn" });
+  }
+}

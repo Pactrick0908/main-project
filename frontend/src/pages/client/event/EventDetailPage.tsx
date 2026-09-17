@@ -1,20 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import {
-  ArrowLeft,
-  Calendar,
-  MapPin,
-  ShieldCheck,
-  Zap,
-  CheckCircle2,
-  QrCode,
-  Check,
-  Sparkles,
-  Maximize2,
-  Users,
-  ArrowRight,
-  Armchair,
-} from "lucide-react";
+import { ArrowLeft, ShieldCheck, Zap, Users, ArrowRight } from "lucide-react";
 import { EVENTS_DATA, type DetailedEvent } from "@/data/events.data";
 import { getResaleTicketsByEventId } from "@/pages/client/market/marketplace.data";
 import { useAuth } from "@/context/AuthContext";
@@ -26,6 +12,8 @@ import SeatSelectionBoard, {
   getZoneSeatConfig,
   type ZoneTabInfo,
 } from "./SeatSelectionBoard";
+import StadiumOverviewMap from "./StadiumOverviewMap";
+import ZoneTicketSelector from "./ZoneTicketSelector";
 
 export default function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -35,9 +23,9 @@ export default function EventDetailPage() {
   const eventId = id ? parseInt(id, 10) : 1;
   const initialEvent = EVENTS_DATA[eventId] || EVENTS_DATA[1];
   const [event, setEvent] = useState<DetailedEvent>(initialEvent);
-  const [isLoadingEvent, setIsLoadingEvent] = useState(false);
+  const [, setIsLoadingEvent] = useState(false);
 
-  // Lưu số lượng vé cho từng zone: { [zoneId]: quantity }
+  // Số lượng vé cho từng zone: { [zoneId]: quantity }
   const [selectedQuantities, setSelectedQuantities] = useState<
     Record<string, number>
   >(() => {
@@ -60,7 +48,7 @@ export default function EventDetailPage() {
   >({});
   const [showOverviewMap, setShowOverviewMap] = useState(false);
 
-  // Tải dữ liệu sự kiện thật từ DB
+  // Tải dữ liệu sự kiện từ backend DB
   useEffect(() => {
     let isMounted = true;
     setIsLoadingEvent(true);
@@ -69,15 +57,62 @@ export default function EventDetailPage() {
       .getEventById(eventId)
       .then((res) => {
         if (isMounted && res.data?.event) {
-          const dbEvent = res.data.event;
-          setEvent(dbEvent);
-          if (dbEvent.zones && dbEvent.zones.length > 0) {
+          const dbEvent = res.data.event as any;
+          const fallback = EVENTS_DATA[eventId] || EVENTS_DATA[1];
+
+          // Ghép dữ liệu DB với fallback UI (banner, artist…)
+          const normalized: DetailedEvent = {
+            ...fallback,
+            ...dbEvent,
+            id: dbEvent.id,
+            title: dbEvent.title || fallback.title,
+            description: dbEvent.description || fallback.description,
+            bannerImage:
+              dbEvent.bannerImage ||
+              dbEvent.bannerUrl ||
+              fallback.bannerImage,
+            venue: dbEvent.venue || dbEvent.place?.name || fallback.venue,
+            address:
+              dbEvent.address || dbEvent.place?.address || fallback.address,
+            city: dbEvent.city || dbEvent.place?.city || fallback.city,
+            organizer:
+              dbEvent.organizer ||
+              dbEvent.organizerName ||
+              fallback.organizer,
+            logoUrl: dbEvent.logoUrl || undefined,
+            mapUrl: dbEvent.mapUrl || undefined,
+            zones: (dbEvent.zones || []).map((z: any, idx: number) => ({
+              id: String(z.eventZoneId ?? z.id),
+              name: z.name,
+              price: Number(z.price) || 0,
+              solPrice: z.solPrice || Number(z.price) / 5_000_000 || 0,
+              available: z.available ?? z.totalSeats ?? 0,
+              totalSeats: z.totalSeats ?? z.available ?? 0,
+              rowCount: z.rowCount ?? z.row ?? undefined,
+              soldSeats: Array.isArray(z.soldSeats) ? z.soldSeats : [],
+              eventZoneId: Number(z.eventZoneId ?? z.id),
+              zoneId: z.zoneId,
+              hasSeats: z.hasSeats,
+              color:
+                z.color ||
+                fallback.zones[idx % fallback.zones.length]?.color ||
+                "#F97316",
+              benefits: z.benefits ||
+                fallback.zones[idx % fallback.zones.length]?.benefits || [
+                  "Check-in QR",
+                ],
+            })),
+          };
+
+          setEvent(normalized);
+          if (normalized.zones.length > 0) {
             const initial: Record<string, number> = {};
-            dbEvent.zones.forEach((z) => {
+            normalized.zones.forEach((z) => {
               initial[z.id] = 0;
             });
             setSelectedQuantities(initial);
-            setActiveZoneId(dbEvent.zones[0].id);
+            setActiveZoneId(normalized.zones[0].id);
+            setSelectedSeatsByZone({});
           }
         }
       })
@@ -127,7 +162,7 @@ export default function EventDetailPage() {
     zone: string;
     qty: number;
     total: number;
-    seats: number;
+    seats?: string[];
   } | null>(null);
 
   const formatVND = (amount: number) =>
@@ -176,23 +211,26 @@ export default function EventDetailPage() {
 
   // Thông tin các zone để hiển thị tab và trạng thái
   const allZonesTabInfo: ZoneTabInfo[] = useMemo(() => {
-    return event.zones.map((z) => ({
+    return event.zones.map((z: any) => ({
       id: z.id,
       name: z.name,
       color: z.color,
       price: z.price,
       qty: selectedQuantities[z.id] || 0,
       selectedSeatsCount: (selectedSeatsByZone[z.id] || []).length,
+      totalSeats: z.totalSeats || z.available || undefined,
+      rowCount: z.rowCount || undefined,
+      soldSeats: z.soldSeats || [],
     }));
   }, [event.zones, selectedQuantities, selectedSeatsByZone]);
 
-  // Tự động đồng bộ số ghế theo từng phân khu khi số lượng vé của phân khu đó thay đổi
+  // Tự động đồng bộ số ghế theo từng phân khu khi số lượng vé thay đổi
   useEffect(() => {
     setSelectedSeatsByZone((prev) => {
       let changed = false;
       const next = { ...prev };
 
-      event.zones.forEach((z) => {
+      event.zones.forEach((z: any) => {
         const qty = selectedQuantities[z.id] || 0;
         const currentSeats = next[z.id] || [];
 
@@ -204,19 +242,25 @@ export default function EventDetailPage() {
           return;
         }
 
-        // Nếu đã chọn nhiều hơn số lượng vé của zone này, cắt bớt
+        // Nếu đã chọn nhiều hơn số lượng vé, cắt bớt
         if (currentSeats.length > qty) {
           next[z.id] = currentSeats.slice(0, qty);
           changed = true;
           return;
         }
 
-        // Nếu chưa đủ số lượng vé của zone này, gợi ý thêm ghế trống của chính zone này
+        // Nếu chưa đủ số lượng vé, gợi ý thêm ghế trống của phân khu đó
         if (currentSeats.length < qty) {
-          const cfg = getZoneSeatConfig(z.name);
+          const cfg = getZoneSeatConfig(
+            z.name,
+            z.totalSeats || z.available,
+            z.rowCount,
+            z.soldSeats,
+          );
           const available: string[] = [];
-          cfg.rows.forEach((row) => {
-            for (let i = 1; i <= cfg.seatsPerRow; i++) {
+          cfg.rows.forEach((row, rowIdx) => {
+            const count = cfg.seatsInRow[rowIdx] ?? cfg.seatsPerRow;
+            for (let i = 1; i <= count; i++) {
               const id = `${row}${i}`;
               if (!cfg.occupied.has(id) && !currentSeats.includes(id)) {
                 available.push(id);
@@ -244,7 +288,6 @@ export default function EventDetailPage() {
         return { ...prev, [zoneId]: current.filter((s) => s !== seatId) };
       }
       if (current.length >= qty) {
-        // Đã chọn đủ số lượng vé của phân khu này
         return prev;
       }
       return { ...prev, [zoneId]: [...current, seatId] };
@@ -256,13 +299,19 @@ export default function EventDetailPage() {
   };
 
   const handleAutoPickSeatsForZone = (zoneId: string) => {
-    const targetZone = event.zones.find((z) => z.id === zoneId);
+    const targetZone = event.zones.find((z) => z.id === zoneId) as any;
     if (!targetZone) return;
     const qty = selectedQuantities[zoneId] || 0;
-    const cfg = getZoneSeatConfig(targetZone.name);
+    const cfg = getZoneSeatConfig(
+      targetZone.name,
+      targetZone.totalSeats || targetZone.available,
+      targetZone.rowCount,
+      targetZone.soldSeats,
+    );
     const available: string[] = [];
-    cfg.rows.forEach((row) => {
-      for (let i = 1; i <= cfg.seatsPerRow; i++) {
+    cfg.rows.forEach((row, rowIdx) => {
+      const count = cfg.seatsInRow[rowIdx] ?? cfg.seatsPerRow;
+      for (let i = 1; i <= count; i++) {
         const id = `${row}${i}`;
         if (!cfg.occupied.has(id)) {
           available.push(id);
@@ -293,23 +342,60 @@ export default function EventDetailPage() {
       return;
     }
 
-    // Đảm bảo số ghế đã được chọn đủ cho từng khu vực
-    event.zones.forEach((z) => {
-      const qty = selectedQuantities[z.id] || 0;
-      const seats = selectedSeatsByZone[z.id] || [];
-      if (qty > 0 && seats.length < qty) {
-        handleAutoPickSeatsForZone(z.id);
-      }
-    });
+    const eventIdNum = Number(event.id);
+    if (!Number.isInteger(eventIdNum) || eventIdNum < 1) {
+      alert("Sự kiện này chưa có trên hệ thống. Hãy chọn sự kiện từ trang chủ.");
+      return;
+    }
 
-    const activeZone =
-      event.zones.find((z) => z.id === activeZoneId) || event.zones[0];
+    // Build items với ghế (auto-pick sync nếu thiếu)
+    const itemsFinal = event.zones
+      .map((z) => {
+        const quantity = selectedQuantities[z.id] || 0;
+        if (quantity < 1) return null;
+        const eventZoneId = Number((z as any).eventZoneId ?? z.id);
+        let seatLabels = [...(selectedSeatsByZone[z.id] || [])];
+        if (seatLabels.length < quantity) {
+          const cfg = getZoneSeatConfig(
+            z.name,
+            (z as any).totalSeats || z.available,
+            (z as any).rowCount,
+            (z as any).soldSeats,
+          );
+          const available: string[] = [];
+          cfg.rows.forEach((row, rowIdx) => {
+            const count = cfg.seatsInRow[rowIdx] ?? cfg.seatsPerRow;
+            for (let i = 1; i <= count; i++) {
+              const id = `${row}${i}`;
+              if (!cfg.occupied.has(id) && !seatLabels.includes(id)) {
+                available.push(id);
+              }
+            }
+          });
+          seatLabels = [...seatLabels, ...available].slice(0, quantity);
+          setSelectedSeatsByZone((prev) => ({
+            ...prev,
+            [z.id]: seatLabels,
+          }));
+        }
+        return {
+          eventZoneId,
+          quantity,
+          seatLabels: seatLabels.slice(0, quantity),
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x != null);
+
+    if (!itemsFinal.length) {
+      alert("Vui lòng chọn ít nhất 1 vé!");
+      return;
+    }
 
     setIsProcessing(true);
     try {
       const res = await ticketApi.createOrderVietQR({
-        quantity: totalTickets,
-        unitPrice: totalPriceVND / totalTickets,
+        eventId: eventIdNum,
+        items: itemsFinal,
         userId: user?.id ? Number(user.id) : undefined,
       });
 
@@ -319,18 +405,24 @@ export default function EventDetailPage() {
         startPolling(res.data.orderCode);
       }
     } catch (err: any) {
-      console.warn("Lỗi gọi PayOS, fallback cấp vé trực tiếp:", err);
-      await ticketApi.issueDemo().catch(() => {});
-      setCreatedTicketInfo({
-        zone: activeZone.name,
-        qty: totalTickets,
-        total: totalPriceVND,
-        seats: allSelectedSeats.length > 0 ? allSelectedSeats : undefined,
-      });
-      setSuccessModal(true);
+      alert(err instanceof Error ? err.message : "Không tạo được đơn thanh toán");
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const showPurchaseSuccess = (ticketCount?: number) => {
+    const zonesBought = event.zones.filter(
+      (z) => (selectedQuantities[z.id] || 0) > 0,
+    );
+    const zoneNames = zonesBought.map((z) => z.name).join(", ");
+    setCreatedTicketInfo({
+      zone: zoneNames || "Vé",
+      qty: ticketCount ?? totalTickets,
+      total: totalPriceVND,
+      seats: allSelectedSeats.length > 0 ? allSelectedSeats : undefined,
+    });
+    setSuccessModal(true);
   };
 
   // Polling trạng thái thanh toán từ PayOS
@@ -341,18 +433,9 @@ export default function EventDetailPage() {
         if (res.data?.status === "PAID") {
           clearInterval(interval);
           setQrModal(false);
-          const activeZone =
-            event.zones.find((z) => z.id === activeZoneId) || event.zones[0];
-          await ticketApi.issueDemo().catch(() => {});
-          setCreatedTicketInfo({
-            zone: activeZone.name,
-            qty: totalTickets,
-            total: totalPriceVND,
-            seats: allSelectedSeats.length > 0 ? allSelectedSeats : undefined,
-          });
-          setSuccessModal(true);
+          showPurchaseSuccess(res.data.ticketIds?.length);
         }
-      } catch (e) {
+      } catch {
         // Tiếp tục poll
       }
     }, 3000);
@@ -361,29 +444,35 @@ export default function EventDetailPage() {
   };
 
   const handleSimulatePayment = async () => {
-    if (orderInfo) {
-      try {
-        await fetch("http://localhost:5000/api/v1/webhook/payos", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            code: "00",
-            data: { orderCode: orderInfo.orderCode, code: "00" },
-          }),
-        });
-      } catch (e) {}
+    if (!orderInfo) return;
+    try {
+      await fetch("/api/v1/webhook/payos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: "00",
+          data: { orderCode: orderInfo.orderCode, code: "00" },
+        }),
+      });
+      // Đợi fulfill rồi lấy status
+      for (let i = 0; i < 10; i++) {
+        await new Promise((r) => setTimeout(r, 400));
+        const res = await ticketApi.getOrderStatus(orderInfo.orderCode);
+        if (res.data?.status === "PAID") {
+          setQrModal(false);
+          showPurchaseSuccess(res.data.ticketIds?.length);
+          return;
+        }
+      }
+      setQrModal(false);
+      showPurchaseSuccess();
+    } catch (e) {
+      alert(
+        e instanceof Error
+          ? e.message
+          : "Giả lập thanh toán thất bại — kiểm tra backend",
+      );
     }
-    setQrModal(false);
-    const activeZone =
-      event.zones.find((z) => z.id === activeZoneId) || event.zones[0];
-    await ticketApi.issueDemo().catch(() => {});
-    setCreatedTicketInfo({
-      zone: activeZone.name,
-      qty: totalTickets,
-      total: totalPriceVND,
-      seats: allSelectedSeats.length > 0 ? allSelectedSeats : undefined,
-    });
-    setSuccessModal(true);
   };
 
   return (
@@ -442,12 +531,10 @@ export default function EventDetailPage() {
 
       {/* ── BỐ CỤC CHÍNH 50 / 50 ───────────────────────────────────────── */}
       <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
-        {/* ══════════════════════════════════════════════════════════════
-            CỘT TRÁI (CHIẾM ~50% MÀN HÌNH - 6 CỘT):
+        {/* CỘT TRÁI (6 CỘT):
             - KHI TĂNG SỐ LƯỢNG VÉ > 0: HIỆN BẢNG CHỌN CHỖ NGỒI (A1, A2...)
-            - KHI SỐ LƯỢNG = 0 HOẶC XEM TOÀN CẢNH: HIỆN ẢNH SƠ ĐỒ KHÁN ĐÀI
-            ══════════════════════════════════════════════════════════════ */}
-        <div className="lg:col-span-6 space-y-4">
+            - KHI SỐ LƯỢNG = 0 HOẶC XEM TOÀN CẢNH: HIỆN ẢNH SƠ ĐỒ KHÁN ĐÀI */}
+        <div className="lg:col-span-8 space-y-4">
           {totalTickets > 0 && !showOverviewMap ? (
             <SeatSelectionBoard
               activeZoneId={activeZone.id}
@@ -456,6 +543,13 @@ export default function EventDetailPage() {
               zoneTickets={activeZoneTickets}
               selectedSeats={activeZoneSeats}
               allZones={allZonesTabInfo}
+              totalSeats={
+                (activeZone as any).totalSeats ||
+                (activeZone as any).available ||
+                undefined
+              }
+              rowCount={(activeZone as any).rowCount || undefined}
+              occupiedSeats={(activeZone as any).soldSeats || []}
               onSwitchZone={(newZoneId) => {
                 setActiveZoneId(newZoneId);
                 setShowOverviewMap(false);
@@ -469,328 +563,37 @@ export default function EventDetailPage() {
               onAddTicketForZone={() => handleQuantityChange(activeZone.id, 1)}
             />
           ) : (
-            <div className="rounded-2xl border border-zinc-800 bg-[#12131A] p-4 sm:p-5">
-              {/* Header thông tin ngắn */}
-              <div className="mb-3 flex items-start justify-between gap-2">
-                <div>
-                  <span className="rounded bg-[#F97316]/20 text-[#F97316] text-[10px] font-bold px-2 py-0.5 uppercase tracking-wider">
-                    {event.category}
-                  </span>
-                  <h1 className="mt-1.5 text-lg sm:text-xl font-extrabold text-white leading-snug line-clamp-2">
-                    {event.title}
-                  </h1>
-                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-400">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="h-3.5 w-3.5 text-[#F97316]" />
-                      {event.date}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <MapPin className="h-3.5 w-3.5 text-emerald-400" />
-                      {event.venue}
-                    </span>
-                  </div>
-                </div>
-
-                {totalTickets > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowOverviewMap(false)}
-                    className="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-[#F97316] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#ea6d0e] transition-colors cursor-pointer"
-                  >
-                    <Armchair className="h-3.5 w-3.5" />
-                    Bảng chọn ghế ({allSelectedSeats.length}/{totalTickets})
-                  </button>
-                )}
-              </div>
-
-              {/* Ô CHỨA ẢNH SƠ ĐỒ KHÁN ĐÀI */}
-              <div className="relative overflow-hidden rounded-xl border border-zinc-800 bg-black/60 group">
-                <img
-                  src="https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?auto=format&fit=crop&w=1200&q=80"
-                  alt="Sơ đồ khán đài"
-                  className={`w-full h-[380px] sm:h-[460px] object-cover object-center transition-all duration-300 ${
-                    isZoomed
-                      ? "scale-125 cursor-zoom-out"
-                      : "cursor-zoom-in group-hover:scale-105"
-                  }`}
-                  onClick={() => setIsZoomed(!isZoomed)}
-                />
-                {/* Overlay Sân khấu chỉ dẫn */}
-                <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
-                  <span className="rounded-lg bg-black/75 backdrop-blur-md px-3 py-1.5 text-[11px] font-bold text-white border border-white/10 flex items-center gap-1.5">
-                    <Sparkles className="h-3 w-3 text-[#F97316]" />
-                    SƠ ĐỒ KHÁN ĐÀI CHÍNH THỨC
-                  </span>
-                  <span
-                    className="rounded-lg bg-black/75 backdrop-blur-md px-2.5 py-1.5 text-[10px] text-zinc-300 border border-white/10 flex items-center gap-1 pointer-events-auto cursor-pointer"
-                    onClick={() => setIsZoomed(!isZoomed)}
-                  >
-                    <Maximize2 className="h-3 w-3" />
-                    {isZoomed ? "Thu nhỏ" : "Phóng to"}
-                  </span>
-                </div>
-
-                {/* Chú thích Stage ở đáy ảnh */}
-                <div className="absolute bottom-3 left-3 right-3 rounded-lg bg-black/80 backdrop-blur-md p-2.5 border border-white/10 text-center">
-                  <div className="text-[11px] font-black tracking-widest text-[#F97316] uppercase">
-                    ▲ HƯỚNG SÂN KHẤU CHÍNH (STAGE) ▲
-                  </div>
-                </div>
-              </div>
-
-              {/* Hướng dẫn chọn số lượng vé để mở bảng chọn chỗ ngồi */}
-              {totalTickets === 0 ? (
-                <div className="mt-3.5 rounded-xl border border-dashed border-orange-500/40 bg-orange-500/10 p-3 text-center text-xs text-orange-300 flex items-center justify-center gap-2">
-                  <Sparkles className="h-4 w-4 text-[#F97316] shrink-0" />
-                  <span>
-                    👉 Hãy bấm nút <strong>(+)</strong> chọn số lượng vé ở cột
-                    bên phải để mở{" "}
-                    <strong>
-                      Bảng chọn chỗ ngồi theo khu vực (SVIP, VIP, CAT...)
-                    </strong>
-                    !
-                  </span>
-                </div>
-              ) : (
-                <div className="mt-3.5 flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-900/70 p-3">
-                  <div className="text-xs text-zinc-300 flex items-center gap-2">
-                    <Armchair className="h-4 w-4 text-[#F97316]" />
-                    <span>
-                      Đang chọn {totalTickets} vé:{" "}
-                      {allSelectedSeats.length > 0
-                        ? allSelectedSeats.join(", ")
-                        : "Chưa chọn ghế"}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowOverviewMap(false)}
-                    className="rounded-lg bg-[#F97316] hover:bg-[#ea6d0e] px-3 py-1.5 text-xs font-bold text-white transition-colors cursor-pointer"
-                  >
-                    Chọn ghế theo khu vực
-                  </button>
-                </div>
-              )}
-            </div>
+            <StadiumOverviewMap
+              event={event}
+              totalTickets={totalTickets}
+              allSelectedSeats={allSelectedSeats}
+              isZoomed={isZoomed}
+              onToggleZoom={() => setIsZoomed(!isZoomed)}
+              onOpenSeatBoard={() => setShowOverviewMap(false)}
+            />
           )}
         </div>
 
-        {/* ══════════════════════════════════════════════════════════════
-            CỘT PHẢI (CHIẾM ~50% MÀN HÌNH - 6 CỘT): DANH SÁCH VÉ + SỐ LƯỢNG + THANH TOÁN
-            ══════════════════════════════════════════════════════════════ */}
-        <div className="lg:col-span-6 flex flex-col justify-between rounded-2xl border border-zinc-800 bg-[#12131A] p-5 sm:p-6 space-y-6">
-          <div>
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-3 mb-4">
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
-                Chọn loại vé &amp; Số lượng
-              </h2>
-              <span className="text-xs text-zinc-400">
-                Đã chọn:{" "}
-                <strong className="text-white">{totalTickets} vé</strong>
-              </span>
-            </div>
-
-            {/* DANH SÁCH CÁC LOẠI VÉ TRONG ZONE KÈM Ô CHỌN SỐ LƯỢNG KẾ BÊN */}
-            <div className="space-y-3.5">
-              {event.zones.map((zone) => {
-                const qty = selectedQuantities[zone.id] || 0;
-                const isSelected = qty > 0;
-
-                return (
-                  <div
-                    key={zone.id}
-                    onClick={() => setActiveZoneId(zone.id)}
-                    className={`flex items-center justify-between gap-3.5 rounded-xl border p-3.5 transition-all ${
-                      isSelected
-                        ? "border-[#F97316] bg-[#F97316]/10 shadow-[0_0_15px_rgba(249,115,22,0.15)] ring-1 ring-[#F97316]"
-                        : "border-zinc-800 bg-zinc-900/60 hover:border-zinc-700"
-                    }`}
-                  >
-                    {/* Bên trái của Hàng vé: Tên, Màu sắc & Giá */}
-                    <div className="flex items-start gap-3 flex-1 min-w-0">
-                      <div
-                        className="h-10 w-1.5 rounded-full shrink-0 mt-0.5"
-                        style={{ backgroundColor: zone.color }}
-                      />
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-bold text-white truncate">
-                            {zone.name}
-                          </h3>
-                        </div>
-                        <div className="text-sm font-extrabold text-[#F97316] mt-0.5">
-                          {formatVND(zone.price)}
-                        </div>
-                        <div className="text-[11px] text-zinc-400 mt-1 flex items-center gap-1.5 line-clamp-1">
-                          <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />
-                          <span>
-                            {zone.benefits[0] ||
-                              "Bao gồm quyền vào cửa và check-in QR"}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* KẾ BÊN: CHỖ ĐỂ LẤY SỐ LƯỢNG VÉ (+ / -) */}
-                    <div className="flex items-center gap-2 shrink-0 bg-zinc-950/80 p-1 rounded-xl border border-zinc-800">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleQuantityChange(zone.id, -1);
-                        }}
-                        disabled={qty <= 0}
-                        className="h-7 w-7 rounded-lg border border-zinc-700 bg-zinc-800 text-sm font-bold text-white hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                      >
-                        -
-                      </button>
-                      <span className="w-6 text-center text-xs font-bold text-white font-mono">
-                        {qty}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleQuantityChange(zone.id, 1);
-                        }}
-                        disabled={qty >= 4}
-                        className="h-7 w-7 rounded-lg border border-zinc-700 bg-zinc-800 text-sm font-bold text-white hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* ══════════════════════════════════════════════════════════════
-              DƯỚI CÙNG: PHƯƠNG THỨC THANH TOÁN + TỔNG TIỀN + NÚT MUA VÉ
-              ══════════════════════════════════════════════════════════════ */}
-          <div className="space-y-4 pt-4 border-t border-zinc-800">
-            {/* Hiển thị vị trí ghế ngồi đã chọn theo từng khu vực */}
-            {totalTickets > 0 && (
-              <div className="rounded-xl bg-zinc-950 p-3.5 border border-zinc-800 space-y-2.5 text-xs">
-                <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2">
-                  <span className="text-zinc-300 font-bold flex items-center gap-1.5">
-                    <Armchair className="h-4 w-4 text-[#F97316]" />
-                    Chỗ ngồi theo từng khu vực:
-                  </span>
-                  <span className="text-[11px] text-zinc-400">
-                    Đã chọn:{" "}
-                    <strong className="text-white">
-                      {allSelectedSeats.length}/{totalTickets} ghế
-                    </strong>
-                  </span>
-                </div>
-
-                <div className="space-y-1.5">
-                  {event.zones.map((zone) => {
-                    const qty = selectedQuantities[zone.id] || 0;
-                    if (qty === 0) return null;
-                    const seats = selectedSeatsByZone[zone.id] || [];
-                    const isCurrent = activeZoneId === zone.id;
-
-                    return (
-                      <div
-                        key={zone.id}
-                        onClick={() => {
-                          setActiveZoneId(zone.id);
-                          setShowOverviewMap(false);
-                        }}
-                        className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${
-                          isCurrent
-                            ? "bg-zinc-900 border border-[#F97316]/50 shadow-sm"
-                            : "bg-zinc-900/40 hover:bg-zinc-900 border border-transparent"
-                        }`}
-                        title="Bấm để chuyển sang xem và chọn ghế khu vực này"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span
-                            className="h-2 w-2 rounded-full shrink-0"
-                            style={{ backgroundColor: zone.color }}
-                          />
-                          <span className="font-semibold text-white truncate">
-                            {zone.name} ({qty} vé):
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap gap-1 shrink-0 ml-2">
-                          {seats.length > 0 ? (
-                            seats.map((s) => (
-                              <span
-                                key={s}
-                                className="rounded bg-[#F97316] text-white px-1.5 py-0.5 text-[11px] font-bold shadow-sm"
-                              >
-                                {s}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-amber-400 text-[11px] font-medium">
-                              Bấm để chọn ghế
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Phương thức thanh toán VietQR */}
-            <div className="flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400">
-                  <QrCode className="h-4 w-4" />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                    Chuyển khoản VietQR / MoMo (Napas247)
-                    <Check className="h-3.5 w-3.5 text-emerald-400" />
-                  </div>
-                  <div className="text-[11px] text-zinc-400">
-                    Quét mã QR tự động xác nhận trong 3 giây
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Khung tổng tiền & Nút thanh toán */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl bg-zinc-950 p-4 border border-zinc-800">
-              <div>
-                <div className="text-xs text-zinc-400">
-                  Tổng tiền ({totalTickets} vé):
-                </div>
-                <div className="text-xl sm:text-2xl font-black text-[#F97316]">
-                  {formatVND(totalPriceVND)}
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleBuyTicket}
-                disabled={isProcessing || totalTickets === 0}
-                className="flex items-center justify-center gap-2 rounded-xl bg-[#F97316] hover:bg-[#ea6d0e] px-7 py-3.5 text-sm font-bold text-white transition-all shadow-[0_4px_20px_rgba(249,115,22,0.3)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-              >
-                {isProcessing ? (
-                  <>
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                    Đang tạo đơn VietQR…
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4" />
-                    Thanh toán ngay
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
+        {/* CỘT PHẢI (6 CỘT): DANH SÁCH VÉ + SỐ LƯỢNG + THANH TOÁN */}
+        <div className="lg:col-span-4">
+          <ZoneTicketSelector
+            event={event}
+            selectedQuantities={selectedQuantities}
+            selectedSeatsByZone={selectedSeatsByZone}
+            activeZoneId={activeZoneId}
+            totalTickets={totalTickets}
+            totalPriceVND={totalPriceVND}
+            allSelectedSeats={allSelectedSeats}
+            isProcessing={isProcessing}
+            formatVND={formatVND}
+            onQuantityChange={handleQuantityChange}
+            onSelectZone={(zoneId) => setActiveZoneId(zoneId)}
+            onBuyTicket={handleBuyTicket}
+          />
         </div>
       </div>
 
-      {/* ── MODAL QUÉT MÃ VIETQR (PAYOS) ────────────────────────────────── */}
+      {/* MODAL QUÉT MÃ VIETQR (PAYOS) */}
       <VietQRModal
         isOpen={qrModal}
         orderInfo={orderInfo}
@@ -799,7 +602,7 @@ export default function EventDetailPage() {
         formatVND={formatVND}
       />
 
-      {/* ── MODAL THÔNG BÁO MUA VÉ THÀNH CÔNG ────────────────────────────── */}
+      {/* MODAL THÔNG BÁO MUA VÉ THÀNH CÔNG */}
       <PurchaseSuccessModal
         isOpen={successModal}
         eventTitle={event.title}

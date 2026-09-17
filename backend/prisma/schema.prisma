@@ -1,6 +1,5 @@
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -13,7 +12,7 @@ model Role {
   description String?  @db.VarChar(255)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(6)
 
-  user User[]
+  users User[]
 
   @@map("roles")
 }
@@ -24,7 +23,7 @@ model User {
   fullName      String   @map("full_name") @db.VarChar(100)
   googleId      String   @db.VarChar(100)
   walletAddress String   @db.VarChar(100)
-  avatarUrl     String   @map("avatar_url") @db.VarChar(255)
+  avatarUrl     String?  @map("avatar_url") @db.VarChar(255)
   roleId        Int?     @default(1) @map("role_id")
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
 
@@ -46,7 +45,7 @@ model Place {
   zones  Zone[]
   events Event[]
 
-  @@map("place")
+  @@map("places")
 }
 
 model Zone {
@@ -68,30 +67,64 @@ model Seat {
   rowName    String @map("row_name") @db.VarChar(10)
   seatNumber Int    @map("seat_number")
 
-  zone    Zone     @relation(fields: [zoneId], references: [id], onDelete: Restrict)
+  zone    Zone     @relation(fields: [zoneId], references: [id], onDelete: Cascade)
   tickets Ticket[]
 
+  // Đảm bảo không trùng số ghế trong cùng 1 hàng thuộc zone
+  @@unique([zoneId, rowName, seatNumber])
   @@map("seats")
 }
 
 model Event {
-  id          Int      @id @default(autoincrement())
-  organizerId Int      @map("organizer_id")
-  placeId     Int      @map("place_id")
-  title       String   @db.VarChar(255)
-  description String?
-  bannerUrl   String?  @map("banner_url") @db.VarChar(500)
-  ticketId    String?  @map("ticket_id") @db.VarChar(100)
-  status      String?  @default("draft") @db.VarChar(20)
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  id            Int      @id @default(autoincrement())
+  organizerId   Int?     @map("organizer_id")
+  placeId       Int      @map("place_id")
+  title         String   @db.VarChar(255)
+  description   String?
+  organizerName String?  @map("organizer_name") @db.VarChar(255)
+  bannerUrl     String?  @map("banner_url") @db.VarChar(500)
+  mapUrl        String?  @map("map_url") @db.VarChar(500)
+  logoUrl       String?  @map("logo_url") @db.VarChar(500)
+  ticketId      String?  @map("ticket_id") @db.VarChar(100)
+  status        String?  @default("draft") @db.VarChar(20) //draft upcoming open ended
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
 
-  organizer User            @relation(fields: [organizerId], references: [id], onDelete: Restrict)
-  place     Place           @relation(fields: [placeId], references: [id], onDelete: Restrict)
-  schedules EventSchedule[]
-  eventZones EventZone[]
-  tickets   Ticket[]
+  organizer    User?           @relation(fields: [organizerId], references: [id], onDelete: SetNull)
+  place        Place           @relation(fields: [placeId], references: [id], onDelete: Restrict)
+  schedules    EventSchedule[]
+  eventZones   EventZone[]
+  tickets      Ticket[]
+  eventArtists EventArtist[]
+  orders       Order[]
 
   @@map("events")
+}
+
+model Artist {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(150)
+  stageName String?  @map("stage_name") @db.VarChar(150)
+  bio       String?
+  avatarUrl String?  @map("avatar_url") @db.VarChar(500)
+  genre     String?  @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  eventArtists EventArtist[]
+
+  @@map("artists")
+}
+
+model EventArtist {
+  id       Int     @id @default(autoincrement())
+  eventId  Int     @map("event_id")
+  artistId Int     @map("artist_id")
+  role     String? @default("performer") @db.VarChar(50)
+
+  event  Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  artist Artist @relation(fields: [artistId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, artistId])
+  @@map("event_artists")
 }
 
 model EventSchedule {
@@ -101,7 +134,7 @@ model EventSchedule {
   endTime   DateTime @map("end_time") @db.Timestamp(6)
   status    String?  @default("open") @db.VarChar(20)
 
-  event Event @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@map("event_schedules")
 }
@@ -110,28 +143,31 @@ model EventZone {
   id         Int     @id @default(autoincrement())
   eventId    Int     @map("event_id")
   zoneId     Int     @map("zone_id")
-  price      Decimal @db.Decimal
+  price      Decimal @db.Decimal(15, 2)
   totalSeats Int     @map("total_seats")
+  /** Số hàng cấu hình — công thức layout: total_seats / row */
+  row        Int?    @map("row")
 
-  event   Event    @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  event   Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   zone    Zone     @relation(fields: [zoneId], references: [id], onDelete: Restrict)
   tickets Ticket[]
 
+  @@unique([eventId, zoneId])
   @@map("event_zones")
 }
 
 model Ticket {
-  id           Int       @id @default(autoincrement())
-  eventId      Int       @map("event_id")
-  seatId       Int?      @map("seat_id")
-  eventZoneId  Int       @map("event_zone_id")
-  status       String?   @default("available") @db.VarChar(50)
-  userId       Int?      @map("user_id")
-  ownerWallet  String?   @map("owner_wallet") @db.VarChar(100)
-  mintAddress  String?   @map("mint_address") @db.VarChar(100)
-  checkedInAt  DateTime? @map("checked_in_at") @db.Timestamp(6)
-  checkedInBy  String?   @map("checked_in_by") @db.VarChar(100)
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  id          Int       @id @default(autoincrement())
+  eventId     Int       @map("event_id")
+  seatId      Int?      @map("seat_id")
+  eventZoneId Int       @map("event_zone_id")
+  status      String?   @default("available") @db.VarChar(50)
+  userId      Int?      @map("user_id")
+  ownerWallet String?   @map("owner_wallet") @db.VarChar(100)
+  mintAddress String?   @map("mint_address") @db.VarChar(100)
+  checkedInAt DateTime? @map("checked_in_at") @db.Timestamp(6)
+  checkedInBy String?   @map("checked_in_by") @db.VarChar(100)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
 
   event     Event         @relation(fields: [eventId], references: [id], onDelete: Restrict)
   seat      Seat?         @relation(fields: [seatId], references: [id], onDelete: Restrict)
@@ -140,12 +176,13 @@ model Ticket {
   nonces    TicketNonce[]
   orders    Order[]
 
+  // Khóa logic chống trùng ghế cho cùng một sự kiện
+  @@unique([eventId, seatId])
   @@index([ownerWallet])
   @@index([userId])
   @@map("tickets")
 }
 
-/// Nonce phiên cho Dynamic QR — TTL tối đa 60s, one-time use
 model TicketNonce {
   id        String    @id @default(cuid())
   ticketId  Int       @map("ticket_id")
@@ -172,6 +209,11 @@ model Order {
   orderCode      BigInt      @unique @map("order_code")
   userId         Int         @map("user_id")
   ticketId       Int?        @map("ticket_id")
+  eventId        Int?        @map("event_id")
+  /** Intent mua: [{ eventZoneId, quantity, seatLabels?: string[] }] */
+  itemsJson      Json?       @map("items_json")
+  /** Ticket ids sau khi fulfill */
+  ticketIdsJson  Json?       @map("ticket_ids_json")
   quantity       Int         @default(1)
   totalAmount    Decimal     @map("total_amount") @db.Decimal(15, 2)
   adminAmount    Decimal     @map("admin_amount") @db.Decimal(15, 2)
@@ -185,9 +227,11 @@ model Order {
 
   user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   ticket Ticket? @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  event  Event?  @relation(fields: [eventId], references: [id], onDelete: SetNull)
 
   @@index([orderCode])
   @@index([userId])
+  @@index([eventId])
   @@map("orders")
 }
 

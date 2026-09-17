@@ -15,35 +15,50 @@ const ALL_CATEGORIES = [
   "Concert",
 ];
 
+interface DisplayUpcomingEvent extends UpcomingEvent {
+  category?: string;
+}
+
 function UpcomingSection() {
   const [active, setActive] = useState("Tất cả");
-  const [eventsList, setEventsList] = useState<UpcomingEvent[]>([]);
+  const [eventsList, setEventsList] = useState<DisplayUpcomingEvent[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Tải danh sách sự kiện từ DB
   useEffect(() => {
     let isMounted = true;
+    setLoading(true);
+
     eventApi
       .listEvents()
       .then((res) => {
         if (isMounted && res.data?.events?.length > 0) {
-          const dbEvents: UpcomingEvent[] = res.data.events.map((e) => ({
-            id: e.id,
-            title: e.title,
-            artist: e.artist,
-            category: e.category || "V-Pop",
-            image: e.bannerImage || e.thumbnail,
-            date: e.date,
-            location: e.venue,
-            priceRange: e.priceRange || "Liên hệ",
-            officialLink: `/events/${e.id}`,
-            ticketsAvailable: e.ticketsAvailable,
-            passCount: e.passCount || 0,
-          }));
+          const dbEvents: DisplayUpcomingEvent[] = res.data.events.map(
+            (e: any) => ({
+              id: e.id,
+              title: e.title,
+              description: e.description || "",
+              banner_url: e.banner_url || e.bannerImage || e.thumbnail || "",
+              organizer_id: e.organizer_id,
+              place_id: e.place_id,
+              status: e.status,
+              schedules: e.schedules || [],
+              zones: e.zones || [],
+              soldTickets: e.soldTickets || 0,
+              place: e.place, // Chứa { name, address, city }
+              passCount: e.passCount || 0,
+              category: e.category || "V-Pop",
+            }),
+          );
+
           setEventsList(dbEvents);
         }
       })
       .catch((err) => {
-        console.warn("[UpcomingSection] Dùng mock events:", err?.message);
+        console.warn("[UpcomingSection] Lỗi tải events:", err?.message);
+      })
+      .finally(() => {
+        if (isMounted) setLoading(false);
       });
 
     return () => {
@@ -77,6 +92,7 @@ function UpcomingSection() {
           {ALL_CATEGORIES.map((cat) => (
             <button
               key={cat}
+              type="button"
               onClick={() => setActive(cat)}
               className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
                 active === cat
@@ -90,11 +106,21 @@ function UpcomingSection() {
         </div>
 
         {/* GRID */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((event) => (
-            <UpcomingCard key={event.id} event={event} />
-          ))}
-        </div>
+        {loading ? (
+          <div className="py-12 text-center text-xs text-zinc-500">
+            Đang tải sự kiện...
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="py-12 text-center text-xs text-zinc-500">
+            Không có sự kiện nào thuộc danh mục này.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {filtered.map((event) => (
+              <UpcomingCard key={event.id} event={event} />
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );

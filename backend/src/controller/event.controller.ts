@@ -1,83 +1,114 @@
 import type { Request, Response } from "express";
 import { EventService } from "../service/event.service.js";
+import { CatalogService } from "../service/catalog.service.js";
 
-/**
- * Lấy danh sách sự kiện từ DB
- * GET /api/v1/events
- */
-export const listEvents = async (req: Request, res: Response) => {
+export const listEvents = async (_req: Request, res: Response) => {
   try {
-    const { status, search } = req.query;
-    const query: { status?: string; search?: string } = {};
-    if (typeof status === "string") query.status = status;
-    if (typeof search === "string") query.search = search;
-
-    const events = await EventService.listEvents(query);
-
-    return res.status(200).json({
-      success: true,
-      data: { events },
-    });
-  } catch (error: any) {
-    console.error("listEvents controller error:", error);
-    return res.status(500).json({
-      success: false,
-      message: error?.message || "Lỗi khi lấy danh sách sự kiện từ cơ sở dữ liệu",
-    });
+    const events = await EventService.list();
+    return res.json({ success: true, data: { events } });
+  } catch (error) {
+    console.error("listEvents:", error);
+    return res.status(500).json({ success: false, message: "Lỗi tải sự kiện" });
   }
 };
 
-/**
- * Lấy thông tin chi tiết sự kiện theo ID
- * GET /api/v1/events/:id
- */
-export const getEventById = async (req: Request, res: Response) => {
+export const getEvent = async (req: Request, res: Response) => {
   try {
-    const eventId = Number(req.params.id);
-    if (isNaN(eventId)) {
-      return res.status(400).json({
-        success: false,
-        message: "ID sự kiện không hợp lệ",
+    const id = Number(req.params.id);
+    const event = await EventService.getById(id);
+    return res.json({ success: true, data: { event } });
+  } catch (error: any) {
+    return res
+      .status(error?.status ?? 500)
+      .json({ success: false, message: error?.message ?? "Lỗi" });
+  }
+};
+
+export const createEvent = async (req: Request, res: Response) => {
+  try {
+    const auth = req.auth;
+    if (!auth) {
+      return res.status(401).json({ success: false, message: "Chưa đăng nhập" });
+    }
+
+    // Ưu tiên nhà cung cấp được chọn trên form; fallback JWT user
+    let organizerId: number | null = null;
+    const requestedOrgId = Number(req.body?.organizerId);
+    if (Number.isInteger(requestedOrgId) && requestedOrgId > 0) {
+      const org = await CatalogService.getOrganizerById(requestedOrgId);
+      if (!org) {
+        return res.status(400).json({
+          success: false,
+          message: `Nhà cung cấp #${requestedOrgId} không tồn tại`,
+        });
+      }
+      organizerId = org.id;
+      if (!req.body.organizerName) {
+        req.body.organizerName = org.fullName;
+      }
+      if (!req.body.logoUrl && org.avatarUrl) {
+        req.body.logoUrl = org.avatarUrl;
+      }
+    } else {
+      organizerId = await EventService.resolveOrganizerId({
+        userId: auth.userId,
+        googleId: auth.googleId,
+        email: auth.email,
+        walletAddress: auth.walletAddress,
       });
     }
 
-    const event = await EventService.getEventById(eventId);
-    if (!event) {
-      return res.status(404).json({
-        success: false,
-        message: "Không tìm thấy sự kiện",
-      });
-    }
+    const event = await EventService.create({
+      ...req.body,
+      organizerId,
+    });
 
-    return res.status(200).json({
+    return res.status(201).json({
       success: true,
+      message: "Tạo sự kiện thành công",
       data: { event },
     });
   } catch (error: any) {
-    console.error("getEventById controller error:", error);
-    return res.status(500).json({
-      success: false,
-      message: error?.message || "Lỗi khi lấy thông tin sự kiện",
-    });
+    console.error("createEvent:", error);
+    return res
+      .status(error?.status ?? 500)
+      .json({ success: false, message: error?.message ?? "Lỗi tạo sự kiện" });
   }
 };
 
-/**
- * Khởi tạo dữ liệu mẫu nếu thiếu
- * POST /api/v1/events/seed
- */
-export const seedEvents = async (_req: Request, res: Response) => {
+export const updateEvent = async (req: Request, res: Response) => {
   try {
-    await EventService.seedEventsIfMissing();
-    return res.status(200).json({
+    const id = Number(req.params.id);
+    const event = await EventService.update(id, req.body);
+    return res.json({
       success: true,
-      message: "Đã kiểm tra và cập nhật dữ liệu sự kiện mẫu",
+      message: "Cập nhật sự kiện thành công",
+      data: { event },
     });
   } catch (error: any) {
-    console.error("seedEvents controller error:", error);
-    return res.status(500).json({
-      success: false,
-      message: error?.message || "Lỗi khởi tạo dữ liệu sự kiện",
-    });
+    return res
+      .status(error?.status ?? 500)
+      .json({ success: false, message: error?.message ?? "Lỗi cập nhật" });
+  }
+};
+
+export const deleteEvent = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    await EventService.remove(id);
+    return res.json({ success: true, message: "Đã xóa sự kiện" });
+  } catch (error: any) {
+    return res
+      .status(error?.status ?? 500)
+      .json({ success: false, message: error?.message ?? "Lỗi xóa sự kiện" });
+  }
+};
+
+export const listPlaces = async (_req: Request, res: Response) => {
+  try {
+    const places = await EventService.listPlaces();
+    return res.json({ success: true, data: { places } });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Lỗi tải địa điểm" });
   }
 };

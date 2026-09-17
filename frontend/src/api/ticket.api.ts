@@ -1,7 +1,7 @@
 import { getToken } from "./auth.api";
 
 const API_BASE =
-  import.meta.env.VITE_API_URL ?? "http://localhost:5000/api/v1";
+  import.meta.env.VITE_API_URL ?? "/api/v1";
 
 export type TicketDto = {
   id: number;
@@ -52,7 +52,13 @@ async function api<T>(
 
 export const ticketApi = {
   listMine: () =>
-    api<{ success: boolean; data: { tickets: TicketDto[] } }>("/tickets/mine"),
+    api<{
+      success: boolean;
+      data: {
+        tickets: TicketDto[];
+        wallet?: { address: string; syncedAt: string };
+      };
+    }>("/tickets/mine"),
 
   listAll: () =>
     api<{ success: boolean; data: { tickets: TicketDto[] } }>(
@@ -69,9 +75,12 @@ export const ticketApi = {
 
   /** Tạo đơn mua vé và lấy mã VietQR PayOS */
   createOrderVietQR: (params: {
-    ticketId?: number;
-    quantity: number;
-    unitPrice: number;
+    eventId: number;
+    items: Array<{
+      eventZoneId: number;
+      quantity: number;
+      seatLabels?: string[];
+    }>;
     userId?: number;
   }) =>
     api<{
@@ -80,6 +89,7 @@ export const ticketApi = {
         orderId: number;
         orderCode: number;
         totalAmount: number;
+        quantity: number;
         checkoutUrl: string;
         qrCode: string;
         paymentLinkId: string;
@@ -100,6 +110,9 @@ export const ticketApi = {
         status: "PENDING" | "PAID" | "CANCELLED";
         solTxSignature: string | null;
         createdAt: string;
+        quantity?: number;
+        eventId?: number | null;
+        ticketIds?: number[];
       };
     }>(`/orders/${orderCode}/status`, { method: "GET" }),
 

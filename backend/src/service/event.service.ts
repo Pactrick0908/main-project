@@ -1,357 +1,720 @@
 import { prisma } from "../lib/prisma.js";
+import {
+  assertCanDeleteEvent,
+  assertCanUpdateEvent,
+  BOOKED_TICKET_STATUSES,
+  buildEventEditPolicy,
+  isValidEventStatus,
+  normalizeEventStatus,
+} from "./eventPolicy.js";
 
-const DEFAULT_EVENT_COLORS = [
-  "#F97316",
-  "#EC4899",
-  "#8B5CF6",
-  "#3B82F6",
-  "#10B981",
-  "#EAB308",
-];
-
-const DEFAULT_EVENT_RULES = [
-  "Vé đã phát hành có mã định danh và QR động, không hoàn trả dưới mọi hình thức trừ khi sự kiện bị hủy.",
-  "Mỗi mã Dynamic QR chỉ có hiệu lực quét check-in 01 lần duy nhất tại cổng soát vé.",
-  "Khán giả vui lòng xuất trình CCCD/VNeID hoặc thẻ căn cước trùng thông tin khi được kiểm tra.",
-  "Nghiêm cấm mang vũ khí, chất cháy nổ, đồ uống có cồn, vật sắc nhọn và thiết bị ghi hình chuyên nghiệp.",
-  "Trẻ em dưới 12 tuổi phải có người giám hộ đi kèm suốt thời gian diễn ra sự kiện.",
-];
-
-export interface SerializedEventZone {
-  id: string;
-  eventZoneId: number;
-  zoneId: number;
+export type CreateEventZoneInput = {
+  /** Tái sử dụng zone có sẵn của địa điểm */
+  zoneId?: number;
   name: string;
   price: number;
-  solPrice: number;
-  available: number;
   totalSeats: number;
-  color: string;
-  benefits: string[];
-}
+  /** true = khu có ghế (VIP/khán đài); false = đứng / GA */
+  hasSeats?: boolean;
+  /** Số hàng ghế — chỉ dùng khi hasSeats (vd: 10 hàng → A..J) */
+  rowCount?: number;
+  /** Sinh ghế vật lý trong DB (mặc định = hasSeats) */
+  generateSeats?: boolean;
+};
 
-export interface SerializedEvent {
+export type CreateEventInput = {
+  title: string;
+  description?: string;
+  /** Tên nhà tổ chức hiển thị */
+  organizerName?: string;
+  /** Poster sự kiện */
+  bannerUrl?: string;
+  /** Ảnh sơ đồ chỗ ngồi */
+  mapUrl?: string;
+  /** Ảnh / logo nhà tổ chức */
+  logoUrl?: string;
+  status?: string;
+  organizerId?: number | null;
+  place?: { name: string; address: string; city: string };
+  placeId?: number;
+  startTime?: string;
+  endTime?: string;
+  zones: CreateEventZoneInput[];
+};
+
+/** Giới hạn sinh ghế để tránh timeout khi total lớn */
+const MAX_GENERATED_SEATS = 300;
+
+function serializeEvent(event: {
   id: number;
   title: string;
-  artist: string;
-  category: string;
-  bannerImage: string;
-  thumbnail: string;
-  date: string;
-  time: string;
-  venue: string;
-  address: string;
-  city: string;
-  description: string;
-  organizer: string;
-  ticketsAvailable: boolean;
-  status: string;
-  minPrice: number;
-  maxPrice: number;
-  priceRange: string;
-  passCount: number;
-  zones: SerializedEventZone[];
-  rules: string[];
-  organizerInfo?: {
+  description: string | null;
+  organizerName?: string | null;
+  bannerUrl: string | null;
+  mapUrl?: string | null;
+  logoUrl?: string | null;
+  status: string | null;
+  ticketId: string | null;
+  createdAt: Date;
+  place: { id: number; name: string; address: string; city: string };
+  organizer?: {
     id: number;
     fullName: string;
     email: string;
-    avatarUrl?: string | null;
-  } | undefined;
-}
+    avatarUrl: string | null;
+  } | null;
+  schedules: Array<{
+    id: number;
+    startTime: Date;
+    endTime: Date;
+    status: string | null;
+  }>;
+  eventZones: Array<{
+    id: number;
+    price: unknown;
+    totalSeats: number;
+    row?: number | null;
+    zone: {
+      id: number;
+      name: string;
+      hasSeats: boolean;
+      _count?: { seats: number };
+      seats?: Array<{ rowName: string }>;
+    };
+    _count?: { tickets: number };
+    tickets?: Array<{
+      seatId: number | null;
+      status: string | null;
+      seat: { rowName: string; seatNumber: number } | null;
+    }>;
+  }>;
+  _count?: { tickets: number };
+}) {
+  const ZONE_COLORS = [
+    "#F97316",
+    "#EAB308",
+    "#3B82F6",
+    "#10B981",
+    "#A855F7",
+    "#EF4444",
+  ];
 
-function formatVND(amount: number): string {
-  return new Intl.NumberFormat("vi-VN").format(amount) + "đ";
-}
+  const organizerDisplay =
+    event.organizerName?.trim() ||
+    event.organizer?.fullName ||
+    "Ban tổ chức";
 
-function formatDateVietnamese(date: Date): string {
-  try {
-    const days = [
-      "Chủ Nhật",
-      "Thứ Hai",
-      "Thứ Ba",
-      "Thứ Tư",
-      "Thứ Năm",
-      "Thứ Sáu",
-      "Thứ Bảy",
-    ];
-    const dayName = days[date.getDay()];
-    const d = String(date.getDate()).padStart(2, "0");
-    const m = String(date.getMonth() + 1).padStart(2, "0");
-    const y = date.getFullYear();
-    return `${dayName}, ${d}/${m}/${y}`;
-  } catch {
-    return "Sắp diễn ra";
+  const soldTicketsTotal = event._count?.tickets ?? 0;
+  // Ưu tiên đếm vé đã đặt theo status nếu đã load tickets (chi tiết)
+  let bookedFromTickets = 0;
+  for (const ez of event.eventZones) {
+    for (const t of ez.tickets ?? []) {
+      if (
+        t.status &&
+        (BOOKED_TICKET_STATUSES as readonly string[]).includes(t.status)
+      ) {
+        bookedFromTickets++;
+      }
+    }
   }
+  const hasBookings =
+    bookedFromTickets > 0 || soldTicketsTotal > 0;
+
+  return {
+    id: event.id,
+    title: event.title,
+    description: event.description,
+    organizerName: event.organizerName ?? null,
+    organizer: organizerDisplay,
+    bannerUrl: event.bannerUrl,
+    bannerImage: event.bannerUrl,
+    mapUrl: event.mapUrl ?? null,
+    logoUrl: event.logoUrl ?? null,
+    ticketId: event.ticketId,
+    createdAt: event.createdAt,
+    place: event.place,
+    venue: event.place?.name,
+    address: event.place?.address,
+    city: event.place?.city,
+    schedules: event.schedules.map((s) => ({
+      id: s.id,
+      startTime: s.startTime,
+      endTime: s.endTime,
+      status: s.status,
+    })),
+    zones: event.eventZones.map((ez, idx) => {
+      // Số hàng cấu hình từ event_zones.row (công thức total_seats / row)
+      const rowCount =
+        ez.row && ez.row > 0
+          ? ez.row
+          : ez.zone.hasSeats
+            ? Math.max(1, Math.round(Math.sqrt(ez.totalSeats)))
+            : undefined;
+
+      // Ghế đã gắn ticket.seatId → ẩn trên sơ đồ
+      const soldSeats = (ez.tickets ?? [])
+        .filter((t) => t.seatId != null && t.seat)
+        .map((t) => `${t.seat!.rowName}${t.seat!.seatNumber}`);
+
+      return {
+        id: ez.id,
+        eventZoneId: ez.id,
+        name: ez.zone.name,
+        zoneId: ez.zone.id,
+        hasSeats: ez.zone.hasSeats,
+        price: Number(ez.price),
+        totalSeats: ez.totalSeats,
+        row: ez.row ?? null,
+        available: Math.max(0, ez.totalSeats - (ez._count?.tickets ?? 0)),
+        rowCount,
+        soldSeats,
+        color: ZONE_COLORS[idx % ZONE_COLORS.length],
+        soldTickets: ez._count?.tickets ?? 0,
+        benefits: ez.zone.hasSeats
+          ? ["Ghế ngồi cố định có mã định danh", "Check-in QR"]
+          : ["Vé vào cửa khu vực đứng", "Check-in QR"],
+      };
+    }),
+    soldTickets: soldTicketsTotal,
+    status: normalizeEventStatus(event.status),
+    editPolicy: buildEventEditPolicy(event.status, hasBookings),
+    organizerInfo: event.organizer
+      ? {
+          id: event.organizer.id,
+          fullName: event.organizer.fullName,
+          email: event.organizer.email,
+          avatarUrl: event.logoUrl || event.organizer.avatarUrl || null,
+        }
+      : undefined,
+  };
 }
 
-function formatTimeVietnamese(date: Date): string {
-  try {
-    const hours = String(date.getHours()).padStart(2, "0");
-    const minutes = String(date.getMinutes()).padStart(2, "0");
-    return `${hours}:${minutes} (Mở cổng trước 2h)`;
-  } catch {
-    return "19:30";
+const eventIncludeList = {
+  place: true,
+  organizer: {
+    select: { id: true, fullName: true, email: true, avatarUrl: true },
+  },
+  schedules: true,
+  eventZones: {
+    include: {
+      zone: true,
+      _count: { select: { tickets: true } },
+    },
+  },
+  _count: { select: { tickets: true } },
+} as const;
+
+/** Chi tiết: kèm ghế đã bán để ẩn trên sơ đồ */
+const eventInclude = {
+  place: true,
+  organizer: {
+    select: { id: true, fullName: true, email: true, avatarUrl: true },
+  },
+  schedules: true,
+  eventZones: {
+    include: {
+      zone: {
+        include: {
+          seats: { select: { id: true, rowName: true, seatNumber: true } },
+          _count: { select: { seats: true } },
+        },
+      },
+      tickets: {
+        where: {
+          seatId: { not: null },
+        },
+        select: {
+          seatId: true,
+          status: true,
+          seat: { select: { rowName: true, seatNumber: true } },
+        },
+      },
+      _count: { select: { tickets: true } },
+    },
+  },
+  _count: { select: { tickets: true } },
+} as const;
+
+function rowLabel(rowIndex: number): string {
+  // 0 -> A, 25 -> Z, 26 -> AA
+  let n = rowIndex;
+  let label = "";
+  do {
+    label = String.fromCharCode(65 + (n % 26)) + label;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return label;
+}
+
+async function generateSeatsForZone(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx: any,
+  zoneId: number,
+  totalSeats: number,
+  rowCount: number,
+) {
+  const existing = await tx.seat.count({ where: { zoneId } });
+  const target = Math.min(totalSeats, MAX_GENERATED_SEATS);
+  if (existing >= target) return existing;
+
+  // 200/10 → 10×20; 200/11 → 11×18 + 1×2
+  let requestedRows = Math.max(1, Math.floor(rowCount));
+  requestedRows = Math.min(requestedRows, target);
+
+  let seatsInRow: number[];
+  if (requestedRows >= target) {
+    seatsInRow = Array.from({ length: target }, () => 1);
+  } else {
+    const base = Math.floor(target / requestedRows);
+    const rem = target % requestedRows;
+    seatsInRow =
+      rem === 0
+        ? Array.from({ length: requestedRows }, () => base)
+        : [...Array.from({ length: requestedRows }, () => base), rem];
+  }
+
+  const batch: Array<{ zoneId: number; rowName: string; seatNumber: number }> =
+    [];
+  let created = existing;
+  let globalIndex = 0;
+
+  for (let row = 0; row < seatsInRow.length && created < target; row++) {
+    const count = seatsInRow[row];
+    for (let seatNumber = 1; seatNumber <= count && created < target; seatNumber++) {
+      if (globalIndex < existing) {
+        globalIndex++;
+        continue;
+      }
+      batch.push({
+        zoneId,
+        rowName: rowLabel(row),
+        seatNumber,
+      });
+      created++;
+      globalIndex++;
+    }
+  }
+
+  const CHUNK = 100;
+  for (let i = 0; i < batch.length; i += CHUNK) {
+    await tx.seat.createMany({
+      data: batch.slice(i, i + CHUNK),
+      skipDuplicates: true,
+    });
+  }
+  return target;
+}
+
+function validateZones(zones: CreateEventZoneInput[]) {
+  if (!zones?.length) {
+    throw Object.assign(new Error("Cần ít nhất 1 hạng vé / khu vực"), {
+      status: 400,
+    });
+  }
+
+  const names = new Set<string>();
+  for (const z of zones) {
+    const name = z.name?.trim();
+    if (!name) {
+      throw Object.assign(new Error("Mỗi khu vực cần có tên"), { status: 400 });
+    }
+    const key = name.toLowerCase();
+    if (names.has(key)) {
+      throw Object.assign(new Error(`Trùng tên khu vực: ${name}`), {
+        status: 400,
+      });
+    }
+    names.add(key);
+
+    if (!(Number(z.price) > 0)) {
+      throw Object.assign(new Error(`Giá khu "${name}" phải > 0`), {
+        status: 400,
+      });
+    }
+    if (!Number.isInteger(Number(z.totalSeats)) || Number(z.totalSeats) < 1) {
+      throw Object.assign(
+        new Error(`Số lượng khu "${name}" phải là số nguyên ≥ 1`),
+        { status: 400 },
+      );
+    }
+
+    const hasSeats = z.hasSeats ?? true;
+    if (hasSeats) {
+      const rows = Number(z.rowCount);
+      if (!Number.isInteger(rows) || rows < 1) {
+        throw Object.assign(
+          new Error(`Khu "${name}" (có ghế) cần số hàng ≥ 1`),
+          { status: 400 },
+        );
+      }
+      if (rows > Number(z.totalSeats)) {
+        throw Object.assign(
+          new Error(`Khu "${name}": số hàng không được lớn hơn tổng ghế`),
+          { status: 400 },
+        );
+      }
+    }
   }
 }
 
 export class EventService {
   /**
-   * Serialize Prisma Event to frontend-compatible structure
+   * JWT có thể mang userId cũ (DB reset / user bị xóa).
+   * Resolve → user thật; nếu không có thì tạo user từ thông tin JWT.
    */
-  static serializeEvent(event: any): SerializedEvent {
-    const firstSchedule = event.schedules?.[0];
-    const eventDate = firstSchedule?.startTime
-      ? formatDateVietnamese(new Date(firstSchedule.startTime))
-      : "Đang cập nhật ngày";
-    const eventTime = firstSchedule?.startTime
-      ? formatTimeVietnamese(new Date(firstSchedule.startTime))
-      : "19:30";
+  static async resolveOrganizerId(auth: {
+    userId?: number;
+    googleId?: string;
+    email?: string;
+    walletAddress?: string;
+  }): Promise<number> {
+    if (auth.userId && Number.isFinite(Number(auth.userId))) {
+      const byId = await prisma.user.findUnique({
+        where: { id: Number(auth.userId) },
+        select: { id: true },
+      });
+      if (byId) return byId.id;
+    }
 
-    const zones: SerializedEventZone[] = (event.eventZones || []).map(
-      (ez: any, idx: number) => {
-        const price = Number(ez.price || 0);
-        const ticketCount = ez._count?.tickets ?? ez.tickets?.length ?? 0;
-        const available = Math.max(0, (ez.totalSeats || 50) - ticketCount);
+    if (auth.googleId || auth.email) {
+      const existing = await prisma.user.findFirst({
+        where: {
+          OR: [
+            ...(auth.googleId ? [{ googleId: auth.googleId }] : []),
+            ...(auth.email ? [{ email: auth.email }] : []),
+          ],
+        },
+        select: { id: true },
+      });
+      if (existing) return existing.id;
+    }
 
-        const benefits = [
-          "Ghế ngồi tiêu chuẩn chính hãng",
-          "Mã Dynamic QR chống chụp màn hình",
-          "Bảo hiểm vé & hỗ trợ check-in nhanh",
-        ];
-        if (price >= 2000000) {
-          benefits.unshift("Lối đi riêng VIP & Quà lưu niệm độc quyền");
-        }
+    // Tạo user tối thiểu để thỏa FK events_organizer_id_fkey
+    const googleId = auth.googleId || `org-${Date.now()}`;
+    const email =
+      auth.email ||
+      `${googleId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 24) || "org"}@ticket.local`;
+    const walletAddress =
+      auth.walletAddress || `pending-${googleId}`.slice(0, 100);
 
-        return {
-          id: String(ez.id),
-          eventZoneId: ez.id,
-          zoneId: ez.zoneId,
-          name: ez.zone?.name || `Khu vực ${idx + 1}`,
-          price,
-          solPrice: Number((price / 4800000).toFixed(3)),
-          available,
-          totalSeats: ez.totalSeats || 50,
-          color: DEFAULT_EVENT_COLORS[idx % DEFAULT_EVENT_COLORS.length],
-          benefits,
-        };
-      },
-    );
+    try {
+      const created = await prisma.user.create({
+        data: {
+          googleId,
+          email,
+          fullName: "Ban tổ chức",
+          walletAddress,
+          avatarUrl: "",
+        },
+        select: { id: true },
+      });
+      return created.id;
+    } catch {
+      // Race / email trùng — tìm lại
+      const again = await prisma.user.findFirst({
+        where: {
+          OR: [{ googleId }, { email }],
+        },
+        select: { id: true },
+      });
+      if (again) return again.id;
+      throw Object.assign(
+        new Error("Không xác định được nhà tổ chức (user). Hãy đăng nhập lại Admin."),
+        { status: 401 },
+      );
+    }
+  }
 
-    const prices = zones.map((z) => z.price).filter((p) => p > 0);
-    const minPrice = prices.length ? Math.min(...prices) : 0;
-    const maxPrice = prices.length ? Math.max(...prices) : 0;
+  static async list() {
+    const events = await prisma.event.findMany({
+      include: eventIncludeList,
+      orderBy: { id: "desc" },
+    });
+    return events.map(serializeEvent);
+  }
 
-    let priceRange = "Đang cập nhật";
-    if (prices.length > 0) {
-      if (minPrice === maxPrice) {
-        priceRange = formatVND(minPrice);
-      } else {
-        priceRange = `${formatVND(minPrice)} – ${formatVND(maxPrice)}`;
+  static async getById(id: number) {
+    const event = await prisma.event.findUnique({
+      where: { id },
+      include: eventInclude,
+    });
+    if (!event) {
+      throw Object.assign(new Error("Không tìm thấy sự kiện"), { status: 404 });
+    }
+    return serializeEvent(event);
+  }
+
+  /**
+   * Nghiệp vụ tạo sự kiện:
+   * Place (địa điểm) → Zone (khu vật lý, tái sử dụng theo place)
+   * → EventZone (giá + cung cho sự kiện) → Seat (nếu hasSeats)
+   */
+  static async create(input: CreateEventInput) {
+    if (!input.title?.trim()) {
+      throw Object.assign(new Error("Thiếu tên sự kiện"), { status: 400 });
+    }
+    validateZones(input.zones);
+
+    // Xác nhận organizer còn tồn tại trước khi tạo event (tránh FK)
+    let organizerId: number | null = input.organizerId
+      ? Number(input.organizerId)
+      : null;
+    if (organizerId) {
+      const org = await prisma.user.findUnique({
+        where: { id: organizerId },
+        select: { id: true },
+      });
+      if (!org) {
+        organizerId = null;
       }
     }
 
-    const defaultBanner =
-      "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=1600&q=80";
+    let placeId = input.placeId ?? null;
+    if (!placeId) {
+      if (!input.place?.name?.trim()) {
+        throw Object.assign(new Error("Thiếu địa điểm"), { status: 400 });
+      }
+      const place = await prisma.place.create({
+        data: {
+          name: input.place.name.trim(),
+          address: input.place.address?.trim() || input.place.name.trim(),
+          city: input.place.city?.trim() || "Hà Nội",
+        },
+      });
+      placeId = place.id;
+    } else {
+      const place = await prisma.place.findUnique({ where: { id: placeId } });
+      if (!place) {
+        throw Object.assign(new Error("Địa điểm không tồn tại"), { status: 404 });
+      }
+    }
 
-    return {
-      id: event.id,
-      title: event.title,
-      artist: event.organizer?.fullName || "Nghệ sĩ biểu diễn",
-      category: "Concert",
-      bannerImage: event.bannerUrl || defaultBanner,
-      thumbnail: event.bannerUrl || defaultBanner,
-      date: eventDate,
-      time: eventTime,
-      venue: event.place?.name || "Địa điểm tổ chức",
-      address: event.place?.address || "",
-      city: event.place?.city || "Hà Nội",
-      description:
-        event.description ||
-        `Sự kiện âm nhạc đỉnh cao với hệ thống âm thanh ánh sáng chuẩn quốc tế. Toàn bộ vé phát hành chính hãng có mã định danh chống giả và công nghệ Dynamic QR xoay vòng bảo mật.`,
-      organizer: event.organizer?.fullName || "Ban Tổ Chức Sự Kiện",
-      ticketsAvailable: event.status === "active" || event.status === "open",
-      status: event.status || "draft",
-      minPrice,
-      maxPrice,
-      priceRange,
-      passCount: event._count?.tickets || 0,
-      zones,
-      rules: DEFAULT_EVENT_RULES,
-      organizerInfo: event.organizer
-        ? {
-            id: event.organizer.id,
-            fullName: event.organizer.fullName,
-            email: event.organizer.email,
-            avatarUrl: event.organizer.avatarUrl,
+    const event = await prisma.$transaction(
+      async (tx) => {
+      const created = await tx.event.create({
+        data: {
+          title: input.title.trim(),
+          description: input.description ?? null,
+          organizerName: input.organizerName?.trim() || null,
+          bannerUrl: input.bannerUrl?.trim() || null,
+          mapUrl: input.mapUrl?.trim() || null,
+          logoUrl: input.logoUrl?.trim() || null,
+          status: input.status ?? "draft",
+          organizerId,
+          placeId: placeId!,
+        },
+      });
+
+      if (input.startTime && input.endTime) {
+        const start = new Date(input.startTime);
+        const end = new Date(input.endTime);
+        if (!(end > start)) {
+          throw Object.assign(new Error("endTime phải sau startTime"), {
+            status: 400,
+          });
+        }
+        await tx.eventSchedule.create({
+          data: {
+            eventId: created.id,
+            startTime: start,
+            endTime: end,
+            status: "open",
+          },
+        });
+      }
+
+      for (const z of input.zones) {
+        const hasSeats = z.hasSeats ?? true;
+        const name = z.name.trim();
+        let zoneId = z.zoneId ?? null;
+
+        if (zoneId) {
+          const existingZone = await tx.zone.findFirst({
+            where: { id: zoneId, placeId: placeId! },
+          });
+          if (!existingZone) {
+            throw Object.assign(
+              new Error(`Zone #${zoneId} không thuộc địa điểm đã chọn`),
+              { status: 400 },
+            );
           }
-        : undefined,
-    };
+          zoneId = existingZone.id;
+        } else {
+          // Tái sử dụng zone cùng tên trong Place (khu vật lý gắn địa điểm)
+          const placeZones = await tx.zone.findMany({
+            where: { placeId: placeId! },
+          });
+          const byName = placeZones.find(
+            (pz) => pz.name.trim().toLowerCase() === name.toLowerCase(),
+          );
+          if (byName) {
+            zoneId = byName.id;
+            if (byName.hasSeats !== hasSeats) {
+              await tx.zone.update({
+                where: { id: byName.id },
+                data: { hasSeats },
+              });
+            }
+          } else {
+            const createdZone = await tx.zone.create({
+              data: { placeId: placeId!, name, hasSeats },
+            });
+            zoneId = createdZone.id;
+          }
+        }
+
+        // Một sự kiện không gắn 2 lần cùng zone
+        const dup = await tx.eventZone.findFirst({
+          where: { eventId: created.id, zoneId },
+        });
+        if (dup) {
+          throw Object.assign(
+            new Error(`Khu "${name}" đã được gắn vào sự kiện`),
+            { status: 400 },
+          );
+        }
+
+        await tx.eventZone.create({
+          data: {
+            eventId: created.id,
+            zoneId,
+            price: z.price,
+            totalSeats: z.totalSeats,
+            row:
+              hasSeats && z.rowCount
+                ? Math.max(1, Math.floor(Number(z.rowCount)))
+                : null,
+          },
+        });
+
+        const shouldGenerate = z.generateSeats ?? hasSeats;
+        if (shouldGenerate) {
+          const rowCount = Math.max(1, Math.floor(Number(z.rowCount) || 1));
+          await generateSeatsForZone(tx, zoneId, z.totalSeats, rowCount);
+        }
+      }
+
+      return tx.event.findUniqueOrThrow({
+        where: { id: created.id },
+        // Dùng include nhẹ sau tạo — không load hết ghế
+        include: eventIncludeList,
+      });
+    },
+      { timeout: 60_000, maxWait: 10_000 },
+    );
+
+    return serializeEvent(event);
   }
 
-  /**
-   * Lấy danh sách sự kiện từ DB
-   */
-  static async listEvents(query?: { status?: string; search?: string }) {
-    const where: any = {};
-    if (query?.status) {
-      where.status = query.status;
-    }
-    if (query?.search) {
-      where.OR = [
-        { title: { contains: query.search, mode: "insensitive" } },
-        { description: { contains: query.search, mode: "insensitive" } },
-      ];
-    }
-
-    const events = await prisma.event.findMany({
-      where,
-      include: {
-        place: {
-          include: { zones: true },
-        },
-        eventZones: {
-          include: {
-            zone: true,
-            _count: { select: { tickets: true } },
-          },
-        },
-        schedules: {
-          orderBy: { startTime: "asc" },
-        },
-        organizer: {
-          select: {
-            id: true,
-            fullName: true,
-            email: true,
-            avatarUrl: true,
-          },
-        },
-        _count: {
-          select: { tickets: true },
-        },
-      },
-      orderBy: { id: "asc" },
-    });
-
-    return events.map((e) => this.serializeEvent(e));
-  }
-
-  /**
-   * Lấy chi tiết 1 sự kiện theo ID
-   */
-  static async getEventById(id: number) {
-    const event = await prisma.event.findUnique({
+  static async update(
+    id: number,
+    data: {
+      title?: string;
+      description?: string;
+      organizerName?: string;
+      bannerUrl?: string;
+      mapUrl?: string;
+      logoUrl?: string;
+      status?: string;
+      placeId?: number;
+      zones?: unknown;
+      startTime?: string;
+      endTime?: string;
+    },
+  ) {
+    const existing = await prisma.event.findUnique({
       where: { id },
-      include: {
-        place: {
-          include: { zones: true },
-        },
-        eventZones: {
-          include: {
-            zone: true,
-            _count: { select: { tickets: true } },
-          },
-        },
-        schedules: {
-          orderBy: { startTime: "asc" },
-        },
-        organizer: {
-          select: {
-            id: true,
-            fullName: true,
-            email: true,
-            avatarUrl: true,
-          },
-        },
-        _count: {
-          select: { tickets: true },
-        },
+      include: { _count: { select: { tickets: true } } },
+    });
+    if (!existing) {
+      throw Object.assign(new Error("Không tìm thấy sự kiện"), { status: 404 });
+    }
+
+    const bookedCount = await prisma.ticket.count({
+      where: {
+        eventId: id,
+        status: { in: [...BOOKED_TICKET_STATUSES] },
       },
     });
+    const hasBookings = bookedCount > 0;
+    const policy = buildEventEditPolicy(existing.status, hasBookings);
 
-    if (!event) return null;
-    return this.serializeEvent(event);
+    if (data.status != null && !isValidEventStatus(String(data.status))) {
+      throw Object.assign(
+        new Error(
+          "Trạng thái không hợp lệ. Dùng: draft | upcoming | open | ended",
+        ),
+        { status: 400 },
+      );
+    }
+
+    assertCanUpdateEvent(policy, data as Record<string, unknown>);
+
+    const nextStatus =
+      data.status != null
+        ? normalizeEventStatus(String(data.status))
+        : undefined;
+
+    // ended → không cho đổi gì (đã assert). Chuẩn hóa active→open khi ghi DB.
+    const updated = await prisma.event.update({
+      where: { id },
+      data: {
+        ...(data.title != null ? { title: data.title } : {}),
+        ...(data.description != null ? { description: data.description } : {}),
+        ...(data.organizerName != null
+          ? { organizerName: data.organizerName.trim() || null }
+          : {}),
+        ...(data.bannerUrl != null ? { bannerUrl: data.bannerUrl || null } : {}),
+        ...(data.mapUrl != null ? { mapUrl: data.mapUrl || null } : {}),
+        ...(data.logoUrl != null ? { logoUrl: data.logoUrl || null } : {}),
+        ...(nextStatus != null ? { status: nextStatus } : {}),
+        ...(policy.canChangePlace && data.placeId != null
+          ? { placeId: data.placeId }
+          : {}),
+      },
+      include: eventInclude,
+    });
+
+    return serializeEvent(updated);
   }
 
-  /**
-   * Seed/Khởi tạo các sự kiện mặc định nếu DB chưa có đầy đủ
-   */
-  static async seedEventsIfMissing() {
-    // Kiểm tra xem đã có event 99 (Test PayOS) chưa
-    const testEvent = await prisma.event.findUnique({ where: { id: 99 } });
-    if (testEvent) return;
-
-    // Tìm hoặc tạo admin user
-    let organizer = await prisma.user.findFirst({
-      where: { email: "admin@ticket.local" },
+  static async remove(id: number) {
+    const existing = await prisma.event.findUnique({
+      where: { id },
+      include: { _count: { select: { tickets: true } } },
     });
-    if (!organizer) {
-      organizer = await prisma.user.findFirst();
-    }
-    if (!organizer) return;
-
-    // Tìm hoặc tạo Place
-    let place = await prisma.place.findFirst({
-      where: { name: "Sân vận động Quốc gia Mỹ Đình" },
-    });
-    if (!place) {
-      place = await prisma.place.create({
-        data: {
-          name: "Sân vận động Quốc gia Mỹ Đình",
-          address: "Đường Lê Đức Thọ, Phường Mỹ Đình 1, Nam Từ Liêm",
-          city: "Hà Nội",
-        },
-      });
+    if (!existing) {
+      throw Object.assign(new Error("Không tìm thấy sự kiện"), { status: 404 });
     }
 
-    // Tạo Zone
-    let zone = await prisma.zone.findFirst({
-      where: { placeId: place.id, name: "Khu vực Khảo sát / Test" },
-    });
-    if (!zone) {
-      zone = await prisma.zone.create({
-        data: {
-          placeId: place.id,
-          name: "Khu vực Khảo sát / Test",
-          hasSeats: true,
-        },
-      });
-    }
-
-    // Tạo event 99
-    await prisma.event.upsert({
-      where: { id: 99 },
-      update: {},
-      create: {
-        id: 99,
-        organizerId: organizer.id,
-        placeId: place.id,
-        title: "🧪 Vé Thử Nghiệm Thanh Toán PayOS (VietQR 2.000đ)",
-        description:
-          "Sự kiện mẫu thử nghiệm quy trình thanh toán trực tuyến qua cổng VietQR PayOS thật. Giá vé: 2.000đ để test quét mã ngân hàng.",
-        bannerUrl:
-          "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=1600&q=80",
-        status: "active",
-        eventZones: {
-          create: [
-            {
-              zoneId: zone.id,
-              price: 2000,
-              totalSeats: 999,
-            },
-          ],
-        },
-        schedules: {
-          create: [
-            {
-              startTime: new Date(Date.now() + 86400000 * 30),
-              endTime: new Date(Date.now() + 86400000 * 30 + 14400000),
-              status: "open",
-            },
-          ],
-        },
+    const bookedCount = await prisma.ticket.count({
+      where: {
+        eventId: id,
+        status: { in: [...BOOKED_TICKET_STATUSES] },
       },
+    });
+    const policy = buildEventEditPolicy(existing.status, bookedCount > 0);
+    assertCanDeleteEvent(policy);
+
+    await prisma.$transaction([
+      prisma.eventZone.deleteMany({ where: { eventId: id } }),
+      prisma.eventSchedule.deleteMany({ where: { eventId: id } }),
+      prisma.ticket.deleteMany({ where: { eventId: id } }),
+      prisma.event.delete({ where: { id } }),
+    ]);
+
+    return { id };
+  }
+
+  static async listPlaces() {
+    return prisma.place.findMany({
+      include: {
+        zones: {
+          include: { _count: { select: { seats: true } } },
+        },
+        _count: { select: { events: true } },
+      },
+      orderBy: { id: "desc" },
     });
   }
 }

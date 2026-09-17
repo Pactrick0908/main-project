@@ -4,10 +4,16 @@ import { TicketService } from "../service/ticket.service.js";
 
 async function resolveUser(req: Request) {
   if (!req.auth) return null;
-  const user = await prisma.user.findFirst({
-    where: { googleId: req.auth.googleId },
-  });
-  return user;
+  const or: Array<Record<string, unknown>> = [
+    { googleId: req.auth.googleId },
+  ];
+  if (req.auth.userId) or.push({ id: req.auth.userId });
+  if (req.auth.walletAddress) {
+    or.push({ walletAddress: req.auth.walletAddress });
+  }
+  if (req.auth.email) or.push({ email: req.auth.email });
+
+  return prisma.user.findFirst({ where: { OR: or } });
 }
 
 export const listMyTickets = async (req: Request, res: Response) => {
@@ -17,8 +23,20 @@ export const listMyTickets = async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: "Chưa đăng nhập" });
     }
 
-    const tickets = await TicketService.listMine(user.walletAddress, user.id);
-    return res.json({ success: true, data: { tickets } });
+    const walletAddress =
+      req.auth?.walletAddress || user.walletAddress;
+
+    const tickets = await TicketService.listMine(walletAddress, user.id);
+    return res.json({
+      success: true,
+      data: {
+        tickets,
+        wallet: {
+          address: walletAddress,
+          syncedAt: new Date().toISOString(),
+        },
+      },
+    });
   } catch (error) {
     console.error("listMyTickets:", error);
     return res.status(500).json({ success: false, message: "Lỗi tải vé" });

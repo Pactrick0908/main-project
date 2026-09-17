@@ -44,7 +44,7 @@ export default function PurchaseSuccessModal({
 
         <h2 className="text-base font-bold text-white">Mua vé thành công!</h2>
         <p className="text-[11px] text-zinc-400 mt-0.5">
-          Vé điện tử chính hãng đã được tạo thành công
+          Vé đã vào ví của bạn — mở &quot;Vé của tôi&quot; để lấy mã QR check-in
         </p>
 
         <div className="my-3.5 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3 text-left text-[11px] space-y-1.5">
@@ -81,7 +81,7 @@ export default function PurchaseSuccessModal({
             className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-[#F97316] hover:bg-[#ea6d0e] py-2.5 text-xs font-bold text-white transition-colors cursor-pointer"
           >
             <QrCode className="h-3.5 w-3.5" />
-            Xem Dynamic QR ở &quot;Vé của tôi&quot;
+            Xem ví &amp; lấy Dynamic QR
             <ChevronRight className="h-3.5 w-3.5" />
           </button>
         </div>
