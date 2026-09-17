@@ -1,0 +1,165 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    --font-sans: 'Geist Variable', sans-serif;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-border-active: var(--border-active);
+    --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
+    --color-success: var(--success);
+    --color-success-foreground: var(--success-foreground);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary-hover: var(--primary-hover);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+    /* Fallback Light Mode */
+    --background: #ffffff;
+    --foreground: #09090c;
+    --card: #ffffff;
+    --card-foreground: #09090c;
+    --popover: #ffffff;
+    --popover-foreground: #09090c;
+    --primary: #f59e0b;
+    --primary-hover: #f97316;
+    --primary-foreground: #09090c;
+    --secondary: #f4f4f5;
+    --secondary-foreground: #18181b;
+    --muted: #f4f4f5;
+    --muted-foreground: #71717a;
+    --accent: #fef3c7;
+    --accent-foreground: #92400e;
+    --destructive: #ef4444;
+    --destructive-foreground: #ffffff;
+    --success: #10b981;
+    --success-foreground: #ffffff;
+    --border: #e4e4e7;
+    --border-active: #d4d4d8;
+    --input: #e4e4e7;
+    --ring: #f59e0b;
+    --radius: 0.75rem;
+    --chart-1: #f59e0b;
+    --chart-2: #10b981;
+    --chart-3: #06b6d4;
+    --chart-4: #8b5cf6;
+    --chart-5: #f43f5e;
+    --sidebar: #f8fafc;
+    --sidebar-foreground: #09090c;
+    --sidebar-primary: #f59e0b;
+    --sidebar-primary-foreground: #09090c;
+    --sidebar-accent: #f1f5f9;
+    --sidebar-accent-foreground: #09090c;
+    --sidebar-border: #e2e8f0;
+    --sidebar-ring: #f59e0b;
+}
+
+.dark {
+    /* =================================================================
+       SOLANA AMBER NOIR - WCAG 2.1 AA/AAA COMPLIANT PALETTE
+       ================================================================= */
+    /* Background & Surfaces (60% Foundation) */
+    --background: #09090c;          /* Deep Obsidian Void Canvas (19.8:1 AAA) */
+    --foreground: #f8fafc;          /* High Contrast White Text (19.8:1 AAA) */
+    --card: #13131a;                /* Surface Card Layer (14.8:1 AAA) */
+    --card-foreground: #f8fafc;
+    --popover: #0e0e14;             /* Modals & Popovers Surface */
+    --popover-foreground: #f8fafc;
+    
+    /* Solana Brand Colors (Amber / Orange - 10% Accents) */
+    --primary: #f59e0b;             /* Solana Amber CTA */
+    --primary-hover: #f97316;       /* Solana Orange Glow */
+    --primary-foreground: #09090c;  /* Deep Slate Text on Amber (8.8:1 AAA) */
+
+    /* Secondary & Layers (30% Structure) */
+    --secondary: #1f1f27;           /* Surface Secondary / Chip background */
+    --secondary-foreground: #f1f5f9;
+    --muted: #1a1a22;               /* Neutral fills & inputs */
+    --muted-foreground: #94a3b8;    /* Subtext, timestamps, tx hashes (7.9:1 AAA) */
+    
+    /* Interactive Accents */
+    --accent: #f59e0b;
+    --accent-foreground: #09090c;
+    
+    /* Semantic States (Escrow, Fraud, Warning) */
+    --destructive: #f43f5e;         /* Rose Red - Báo động lỗi/Hủy vé */
+    --destructive-foreground: #ffffff;
+    --success: #10b981;             /* Emerald 500 - KYC & Solana Escrow */
+    --success-foreground: #09090c;
+    
+    /* Borders & Outlines */
+    --border: #22222b;              /* Subtle border */
+    --border-active: #3e3e4f;       /* Focus & Hover border */
+    --input: #1a1a22;
+    --ring: #f59e0b;                /* Solana Amber Focus Ring */
+    --radius: 0.875rem;
+
+    /* Charts & Visualizers */
+    --chart-1: #f59e0b;
+    --chart-2: #10b981;
+    --chart-3: #06b6d4;
+    --chart-4: #8b5cf6;
+    --chart-5: #f43f5e;
+
+    /* Sidebar Navigation */
+    --sidebar: #0e0e14;
+    --sidebar-foreground: #f8fafc;
+    --sidebar-primary: #f59e0b;
+    --sidebar-primary-foreground: #09090c;
+    --sidebar-accent: #1a1a22;
+    --sidebar-accent-foreground: #f8fafc;
+    --sidebar-border: #22222b;
+    --sidebar-ring: #f59e0b;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  html {
+    @apply font-sans;
+    }
+}

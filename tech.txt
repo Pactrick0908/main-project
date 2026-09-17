@@ -1,0 +1,107 @@
+================================================================================
+                    KIẾN TRÚC HỆ THỐNG VÉ SOLANA (cNFT)
+================================================================================
+
+A. Luồng Đăng nhập & Mua vé (Khách hàng):
+   1. Khách bấm "Đăng nhập Google" -> Hệ thống tự sinh/dẫn xuất cặp Keypair ví Solana ngầm (Web3Auth hoặc lưu trữ mã hóa).
+   2. Khách duyệt danh sách sự kiện do Admin tạo, chọn sự kiện, chọn hạng vé/vị trí ghế -> Bấm "Mua vé".
+   3. Web hiển thị popup Mock VietQR (kèm nút "Mô phỏng thanh toán thành công").
+   4. Khách bấm xác nhận thanh toán -> Backend nhận Webhook/Request:
+      - Kiểm tra số lượng vé còn lại trong Database.
+      - Dùng ví Admin gọi hàm mint cNFT (Bubblegum) trên Merkle Tree của sự kiện.
+      - Gửi cNFT trực tiếp vào ví ngầm của khách, lưu trạng thái vé vào Database.
+
+B. Luồng Dynamic QR & Soát vé (Cốt lõi bảo mật):
+   1. Khách mở trang "Vé của tôi" -> Chọn vé cần check-in.
+   2. Web/App gọi API Server xin mã phiên ngẫu nhiên (Server Nonce ngẫu nhiên, TTL: 20-30s).
+   3. Ví ngầm của khách dùng Private Key ký lên chuỗi Nonce đó (Ed25519 detached signature).
+   4. App vẽ mã Dynamic QR chứa: { ticket_id, owner_pubkey, nonce, signature } (mã tự đổi sau 20-30s).
+   5. Nhân viên BTC mở trang Scanner trên Laptop/Điện thoại -> Webcam quét mã QR.
+   6. Máy quét gửi dữ liệu về API xác thực:
+      - Kiểm tra Nonce còn hạn và chưa từng được quét?
+      - Xác thực chữ ký Ed25519 với Địa chỉ ví?
+      - Kiểm tra On-chain/Database xem ví đó có đang sở hữu cNFT vé và vé chưa bị hủy?
+   7. Hợp lệ: Màn hình laptop báo XANH, đổi trạng thái vé is_used = true, ghi log soát vé, hủy Nonce.
+   8. Không hợp lệ / Ảnh chụp màn hình cũ: Màn hình báo ĐỎ (Từ chối).
+
+C. Luồng Chuyển nhượng (Chợ vé & Tặng vé):
+   - Tặng vé (P2P Transfer): Nhập Email/Ví người nhận -> Gọi lệnh transfer cNFT sang ví mới -> Cập nhật owner_address trong Database.
+   - Chợ vé (Marketplace): Hiển thị danh sách vé treo bán -> Người mua bấm mua -> Mock thanh toán VietQR -> Khớp lệnh: chuyển cNFT cho người mua, chuyển tiền cho người bán, trích % phí bản quyền (Royalty) về ví Admin.
+
+D. Luồng Quản trị (Admin - CRUD & Vận hành sự kiện):
+   1. Đăng nhập Quản trị: Admin đăng nhập bằng tài khoản quản trị (Role: ADMIN).
+   2. Khởi tạo hạ tầng On-chain: Bấm nút "Tạo Merkle Tree & Collection" -> Backend dùng ví Admin deploy Merkle Tree và Master Collection NFT trên Solana devnet để sẵn sàng chứa vé cNFT.
+   3. Quản lý Sự kiện & Hạng vé (CRUD Event):
+      - Tạo mới / Sửa / Xóa: Nhập tên sự kiện, thời gian, địa điểm, tải ảnh banner/poster.
+      - Cấu hình hạng vé: Tạo các hạng vé (VIP, Standard, Early Bird) với các trường: Giá bán, Số lượng phát hành tối đa (total_supply), Tỷ lệ phí bản quyền Royalty khi bán lại.
+   4. Cấp phát vé đặc biệt (Airdrop / Vé mời): Admin nhập Email hoặc địa chỉ ví của khách mời/đối tác -> Bấm "Cấp vé" -> Hệ thống tự động mint cNFT và gửi thẳng vào ví người nhận mà không cần thanh toán.
+   5. Giám sát thời gian thực (Dashboard & Analytics):
+      - Biểu đồ trực quan: Tổng số vé đã bán, doanh thu, số vé đã check-in qua cổng theo thời gian thực.
+      - Danh sách toàn bộ vé: Tìm kiếm vé theo Tên khách, Email, Mã vé hoặc Địa chỉ ví.
+      - Can thiệp khẩn cấp (Emergency Controls):
+        + Check-in thủ công: Cho phép Admin duyệt vé qua cổng bằng tay nếu khách bị mất điện thoại/hết pin (đối chiếu qua CCCD/Email).
+        + Khóa vé (Revoke/Blacklist): Vô hiệu hóa ngay lập tức các vé phát hiện hành vi gian lận.
+
+E. Luồng Trạm Soát vé Cổng (Gate Staff / Scanner):
+   1. Nhân viên đứng cổng mở trang /admin/scan (hoặc đăng nhập bằng mã truy cập nhanh của cổng).
+   2. Trình duyệt bật Webcam liên tục để quét mã QR từ điện thoại của khách (chạy theo cơ chế của Luồng B).
+   3. Màn hình phản hồi tức thì với 2 trạng thái lớn:
+      - XANH: Hiện tên khách, hạng vé, vị trí ghế, âm thanh thông báo thành công.
+      - ĐỎ: Hiện lý do từ chối (Mã QR đã hết hạn, Vé đã check-in lúc hh:mm, hoặc Chữ ký không hợp lệ).
+--------------------------------------------------------------------------------
+4. SƠ ĐỒ ĐIỀU HƯỚNG & CẤU TRÚC THƯ MỤC (NEXT.JS APP ROUTER)
+
+src/
+├── app/
+│   ├── layout.tsx              # Giao diện chung + Navbar + PrivyProvider
+│   ├── page.tsx                # Trang chủ: Banner + Danh sách các Concert
+│   ├── event/
+│   │   └── [id]/
+│   │       └── page.tsx        # Chi tiết concert + Sơ đồ chọn ghế + Modal thanh toán
+│   ├── my-tickets/
+│   │   └── page.tsx            # Hồ sơ cá nhân + Danh sách vé sở hữu + Popup Dynamic QR
+│   ├── marketplace/
+│   │   └── page.tsx            # Chợ mua bán lại vé (Demo P2P)
+│   ├── admin/
+│   │   ├── page.tsx            # Quản lý sự kiện: Form tạo vé + Bảng trạng thái vé
+│   │   └── scanner/
+│   │       └── page.tsx        # Giao diện quét QR qua webcam laptop
+│   └── api/
+│       ├── mint-ticket/
+│       │   └── route.ts        # API mint cNFT vé vào ví khách
+│       ├── get-nonce/
+│       │   └── route.ts        # API sinh chuỗi ngẫu nhiên có thời hạn
+│       └── verify-ticket/
+│           └── route.ts        # API xác thực chữ ký và ghi nhận check-in
+├── components/
+│   ├── Navbar.tsx              # Thanh điều hướng (Trang chủ, Chợ, Vé của tôi, Login)
+│   ├── TicketCard.tsx          # Thẻ hiển thị vé
+│   ├── DynamicQRModal.tsx      # Popup hiển thị QR động kèm bộ đếm lùi thời gian
+│   └── SeatMap.tsx             # Giao diện chọn chỗ ngồi
+└── lib/
+    ├── privy.ts                # Cấu hình Privy SDK
+    ├── solana.ts               # Kết nối RPC Solana Devnet & Umi Bubblegum instance
+    └── crypto.ts               # Helper ký và verify chữ ký Ed25519
+
+--------------------------------------------------------------------------------
+5. PHÂN CHIA NHIỆM VỤ (TIMELINE TRIỂN KHAI)
+
+Giai đoạn 1: Thiết lập nền tảng
+- Khởi tạo repo Next.js, cài đặt Tailwind CSS và các package Web3.
+- Cấu hình Privy đăng nhập Google -> Lấy địa chỉ ví Solana hiển thị lên Navbar.
+
+Giai đoạn 2: Bán vé & Mint cNFT
+- Dựng UI Trang chủ, Trang chi tiết sự kiện và Sơ đồ chọn ghế.
+- Viết API Next.js kết nối Metaplex Umi để mint cNFT vào ví khi bấm nút thanh toán.
+
+Giai đoạn 3: Dynamic QR & Trình quét Webcam (Trọng tâm Demo)
+- Viết API cấp Nonce ngẫu nhiên.
+- Dựng UI "Vé của tôi" + Component Dynamic QR (tự refresh sau mỗi 20s).
+- Dựng trang `/admin/scanner` tích hợp html5-qrcode đọc dữ liệu webcam.
+- Hoàn thiện API verify: Kiểm tra chữ ký, cập nhật trạng thái vé.
+
+Giai đoạn 4: Quản trị Admin & Kịch bản Pitching
+- Dựng trang `/admin` tạo sự kiện và xem danh sách vé.
+- Hoàn thiện UI Chợ vé (Marketplace) ở mức demo.
+- Chuẩn bị sẵn 1 điện thoại (App khách) + 1 laptop (Trình quét) để demo trực tiếp.
+================================================================================

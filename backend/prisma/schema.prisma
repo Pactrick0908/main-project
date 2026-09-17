@@ -1,0 +1,376 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Role {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique @db.VarChar(50)
+  description String?  @db.VarChar(255)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  users User[]
+
+  @@map("roles")
+}
+
+model User {
+  id            Int      @id @default(autoincrement())
+  email         String   @unique @db.VarChar(100)
+  fullName      String   @map("full_name") @db.VarChar(100)
+  googleId      String   @db.VarChar(100)
+  walletAddress String   @db.VarChar(100)
+  avatarUrl     String?  @map("avatar_url") @db.VarChar(255)
+  roleId        Int?     @default(1) @map("role_id")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  role                       Role?           @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  organizedEvents            Event[]
+  tickets                    Ticket[]
+  orders                     Order[]
+  primaryRefundBeneficiaryOf Order[]         @relation("OrderPrimaryRefundBeneficiary")
+  resaleListings             ResaleListing[] @relation("ResaleListingSeller")
+  resaleTradesAsSeller       ResaleTrade[]   @relation("ResaleTradeSeller")
+  resaleTradesAsBuyer        ResaleTrade[]   @relation("ResaleTradeBuyer")
+  refundLedgers              RefundLedger[]
+
+  @@map("users")
+}
+
+model Place {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(255)
+  address   String
+  city      String   @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  zones  Zone[]
+  events Event[]
+
+  @@map("places")
+}
+
+model Zone {
+  id       Int     @id @default(autoincrement())
+  placeId  Int     @map("place_id")
+  name     String  @db.VarChar(100)
+  hasSeats Boolean @default(true) @map("has_seats")
+
+  place      Place       @relation(fields: [placeId], references: [id], onDelete: Restrict)
+  seats      Seat[]
+  eventZones EventZone[]
+
+  @@map("zones")
+}
+
+model Seat {
+  id         Int    @id @default(autoincrement())
+  zoneId     Int    @map("zone_id")
+  rowName    String @map("row_name") @db.VarChar(10)
+  seatNumber Int    @map("seat_number")
+
+  zone    Zone     @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  tickets Ticket[]
+
+  // Đảm bảo không trùng số ghế trong cùng 1 hàng thuộc zone
+  @@unique([zoneId, rowName, seatNumber])
+  @@map("seats")
+}
+
+model Event {
+  id            Int      @id @default(autoincrement())
+  organizerId   Int?     @map("organizer_id")
+  placeId       Int      @map("place_id")
+  title         String   @db.VarChar(255)
+  description   String?
+  organizerName String?  @map("organizer_name") @db.VarChar(255)
+  bannerUrl     String?  @map("banner_url") @db.VarChar(500)
+  mapUrl        String?  @map("map_url") @db.VarChar(500)
+  logoUrl       String?  @map("logo_url") @db.VarChar(500)
+  ticketId      String?  @map("ticket_id") @db.VarChar(100)
+  status        String?  @default("draft") @db.VarChar(20) //draft upcoming open ended
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  organizer    User?           @relation(fields: [organizerId], references: [id], onDelete: SetNull)
+  place        Place           @relation(fields: [placeId], references: [id], onDelete: Restrict)
+  schedules    EventSchedule[]
+  eventZones   EventZone[]
+  tickets      Ticket[]
+  eventArtists   EventArtist[]
+  orders         Order[]
+  resaleListings ResaleListing[]
+
+  @@map("events")
+}
+
+model Artist {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(150)
+  stageName String?  @map("stage_name") @db.VarChar(150)
+  bio       String?
+  /** URL hoặc data URL ảnh đại diện */
+  avatarUrl String?  @map("avatar_url") @db.Text
+  genre     String?  @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  eventArtists EventArtist[]
+
+  @@map("artists")
+}
+
+model EventArtist {
+  id       Int     @id @default(autoincrement())
+  eventId  Int     @map("event_id")
+  artistId Int     @map("artist_id")
+  role     String? @default("performer") @db.VarChar(50)
+
+  event  Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  artist Artist @relation(fields: [artistId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, artistId])
+  @@map("event_artists")
+}
+
+model EventSchedule {
+  id        Int      @id @default(autoincrement())
+  eventId   Int      @map("event_id")
+  startTime DateTime @map("start_time") @db.Timestamp(6)
+  endTime   DateTime @map("end_time") @db.Timestamp(6)
+  status    String?  @default("open") @db.VarChar(20)
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@map("event_schedules")
+}
+
+model EventZone {
+  id         Int     @id @default(autoincrement())
+  eventId    Int     @map("event_id")
+  zoneId     Int     @map("zone_id")
+  price      Decimal @db.Decimal(15, 2)
+  totalSeats Int     @map("total_seats")
+  /** Số hàng cấu hình — công thức layout: total_seats / row */
+  row        Int?    @map("row")
+
+  event   Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  zone    Zone     @relation(fields: [zoneId], references: [id], onDelete: Restrict)
+  tickets Ticket[]
+
+  @@unique([eventId, zoneId])
+  @@map("event_zones")
+}
+
+model Ticket {
+  id              Int       @id @default(autoincrement())
+  eventId         Int       @map("event_id")
+  seatId          Int?      @map("seat_id")
+  eventZoneId     Int       @map("event_zone_id")
+  status          String?   @default("available") @db.VarChar(50)
+  userId          Int?      @map("user_id")
+  ownerWallet     String?   @map("owner_wallet") @db.VarChar(100)
+  mintAddress     String?   @map("mint_address") @db.VarChar(100)
+  /** Order sơ cấp đã phát hành vé (để hoàn đúng entitlement) */
+  originalOrderId Int?      @map("original_order_id")
+  checkedInAt     DateTime? @map("checked_in_at") @db.Timestamp(6)
+  checkedInBy     String?   @map("checked_in_by") @db.VarChar(100)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+
+  event         Event           @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  seat          Seat?           @relation(fields: [seatId], references: [id], onDelete: Restrict)
+  eventZone     EventZone       @relation(fields: [eventZoneId], references: [id], onDelete: Restrict)
+  user          User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  originalOrder Order?          @relation("TicketOriginalOrder", fields: [originalOrderId], references: [id], onDelete: SetNull)
+  nonces        TicketNonce[]
+  orders        Order[]         @relation("OrderTicketLink")
+  listings      ResaleListing[]
+  trades        ResaleTrade[]
+  refundLedgers RefundLedger[]
+
+  // Khóa logic chống trùng ghế cho cùng một sự kiện
+  @@unique([eventId, seatId])
+  @@index([ownerWallet])
+  @@index([userId])
+  @@index([originalOrderId])
+  @@map("tickets")
+}
+
+model TicketNonce {
+  id        String    @id @default(cuid())
+  ticketId  Int       @map("ticket_id")
+  nonce     String    @unique @db.VarChar(64)
+  expiresAt DateTime  @map("expires_at") @db.Timestamp(6)
+  usedAt    DateTime? @map("used_at") @db.Timestamp(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([expiresAt])
+  @@map("ticket_nonces")
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+enum OrderResaleState {
+  NONE
+  TRANSFERRED
+}
+
+enum PrimaryRefundStatus {
+  ELIGIBLE
+  BLOCKED_RESOLED
+  REFUNDED
+}
+
+enum ResaleListingStatus {
+  ACTIVE
+  RESERVED
+  SOLD
+  CANCELLED
+  EXPIRED
+}
+
+enum ResaleEscrowStatus {
+  PENDING_PAYMENT
+  HELD
+  RELEASED
+  REFUNDED
+  CANCELLED
+}
+
+enum RefundLedgerKind {
+  PRIMARY_REFUND
+  P2P_RELEASE
+  P2P_REFUND
+}
+
+model Order {
+  id                           Int                  @id @default(autoincrement())
+  orderCode                    BigInt               @unique @map("order_code")
+  userId                       Int                  @map("user_id")
+  ticketId                     Int?                 @map("ticket_id")
+  eventId                      Int?                 @map("event_id")
+  /** Intent mua: [{ eventZoneId, quantity, seatLabels?: string[] }] */
+  itemsJson                    Json?                @map("items_json")
+  /** Ticket ids sau khi fulfill */
+  ticketIdsJson                Json?                @map("ticket_ids_json")
+  quantity                     Int                  @default(1)
+  totalAmount                  Decimal              @map("total_amount") @db.Decimal(15, 2)
+  adminAmount                  Decimal              @map("admin_amount") @db.Decimal(15, 2)
+  systemAmount                 Decimal              @map("system_amount") @db.Decimal(15, 2)
+  solAmount                    Float                @default(0.001) @map("sol_amount")
+  status                       OrderStatus          @default(PENDING)
+  solTxSignature               String?              @map("sol_tx_signature") @db.VarChar(128)
+  paymentLinkId                String?              @map("payment_link_id") @db.VarChar(100)
+  resaleState                  OrderResaleState     @default(NONE) @map("resale_state")
+  primaryRefundBeneficiaryUserId Int?               @map("primary_refund_beneficiary_user_id")
+  primaryRefundStatus          PrimaryRefundStatus  @default(ELIGIBLE) @map("primary_refund_status")
+  createdAt                    DateTime             @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt                    DateTime             @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  user                       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticket                     Ticket?  @relation("OrderTicketLink", fields: [ticketId], references: [id], onDelete: SetNull)
+  event                      Event?   @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  primaryRefundBeneficiary   User?    @relation("OrderPrimaryRefundBeneficiary", fields: [primaryRefundBeneficiaryUserId], references: [id], onDelete: SetNull)
+  issuedTickets              Ticket[] @relation("TicketOriginalOrder")
+
+  @@index([orderCode])
+  @@index([userId])
+  @@index([eventId])
+  @@map("orders")
+}
+
+model ResaleListing {
+  id              Int                 @id @default(autoincrement())
+  ticketId        Int                 @map("ticket_id")
+  sellerId        Int                 @map("seller_id")
+  eventId         Int                 @map("event_id")
+  price           Decimal             @db.Decimal(15, 2)
+  facePrice       Decimal             @map("face_price") @db.Decimal(15, 2)
+  currency        String              @default("VND") @db.VarChar(10)
+  bankCode        String              @map("bank_code") @db.VarChar(20)
+  bankName        String              @map("bank_name") @db.VarChar(100)
+  bankAccountNo   String              @map("bank_account_no") @db.VarChar(50)
+  bankAccountName String              @map("bank_account_name") @db.VarChar(100)
+  note            String?             @db.VarChar(500)
+  status          ResaleListingStatus @default(ACTIVE)
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime            @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  ticket Ticket        @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  seller User          @relation("ResaleListingSeller", fields: [sellerId], references: [id], onDelete: Cascade)
+  event  Event         @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  trades ResaleTrade[]
+
+  @@index([eventId, status])
+  @@index([sellerId, status])
+  @@index([ticketId, status])
+  @@map("resale_listings")
+}
+
+model ResaleTrade {
+  id              Int                 @id @default(autoincrement())
+  listingId       Int                 @map("listing_id")
+  ticketId        Int                 @map("ticket_id")
+  sellerId        Int                 @map("seller_id")
+  buyerId         Int                 @map("buyer_id")
+  amount          Decimal             @db.Decimal(15, 2)
+  payosOrderCode  BigInt              @unique @map("payos_order_code")
+  paymentLinkId   String?             @map("payment_link_id") @db.VarChar(100)
+  escrowStatus    ResaleEscrowStatus  @default(PENDING_PAYMENT) @map("escrow_status")
+  releaseReason   String?             @map("release_reason") @db.VarChar(40)
+  solTxSignature  String?             @map("sol_tx_signature") @db.VarChar(128)
+  paidAt          DateTime?           @map("paid_at") @db.Timestamp(6)
+  releasedAt      DateTime?           @map("released_at") @db.Timestamp(6)
+  refundedAt      DateTime?           @map("refunded_at") @db.Timestamp(6)
+  expiresAt       DateTime?           @map("expires_at") @db.Timestamp(6)
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime            @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  listing ResaleListing @relation(fields: [listingId], references: [id], onDelete: Restrict)
+  ticket  Ticket        @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  seller  User          @relation("ResaleTradeSeller", fields: [sellerId], references: [id], onDelete: Cascade)
+  buyer   User          @relation("ResaleTradeBuyer", fields: [buyerId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, escrowStatus])
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([listingId])
+  @@map("resale_trades")
+}
+
+model RefundLedger {
+  id        Int              @id @default(autoincrement())
+  ticketId  Int              @map("ticket_id")
+  userId    Int              @map("user_id")
+  kind      RefundLedgerKind
+  amount    Decimal          @db.Decimal(15, 2)
+  refType   String           @map("ref_type") @db.VarChar(40)
+  refId     Int              @map("ref_id")
+  note      String?          @db.VarChar(255)
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamp(6)
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, kind, userId])
+  @@index([ticketId])
+  @@index([userId])
+  @@map("refund_ledgers")
+}
+
+model AdminBalance {
+  id            Int      @id @default(autoincrement())
+  totalRevenue  Decimal  @default(0) @map("total_revenue") @db.Decimal(15, 2)
+  systemRevenue Decimal  @default(0) @map("system_revenue") @db.Decimal(15, 2)
+  lastUpdated   DateTime @default(now()) @updatedAt @map("last_updated") @db.Timestamp(6)
+
+  @@map("admin_balance")
+}
