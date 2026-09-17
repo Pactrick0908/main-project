@@ -100,17 +100,17 @@ export type AdminEvent = {
 };
 
 export type DashboardStats = {
-  soldTickets?: number;
-  checkedIn?: number;
-  revoked?: number;
-  checkInRate?: number;
-  eventsActive?: number;
-  eventsTotal?: number;
-  revenue?: number;
-  systemRevenue?: number;
-  paidOrders?: number;
-  orderRevenue?: number;
-  recentTickets?: Array<{
+  soldTickets: number;
+  checkedIn: number;
+  revoked: number;
+  checkInRate: number;
+  eventsActive: number;
+  eventsTotal: number;
+  revenue: number;
+  systemRevenue: number;
+  paidOrders: number;
+  orderRevenue: number;
+  recentTickets: Array<{
     id: number;
     status: string | null;
     ownerWallet: string | null;
@@ -122,23 +122,6 @@ export type DashboardStats = {
     ownerName: string | null;
     ownerEmail: string | null;
   }>;
-  permissions?: { revenue?: boolean; ops?: boolean };
-};
-
-export type AdminStaffUser = {
-  id: number;
-  email: string;
-  name: string;
-  avatar: string | null;
-  role: string;
-  permissions: string[];
-  createdAt?: string;
-};
-
-export type AssignableRoleInfo = {
-  name: string;
-  description: string;
-  permissions: string[];
 };
 
 async function api<T>(
@@ -381,23 +364,4 @@ export const adminApi = {
 
   deleteEvent: (id: number) =>
     api<{ success: boolean }>(`/events/${id}`, { method: "DELETE" }),
-
-  listRoles: () =>
-    api<{ success: boolean; data: { roles: AssignableRoleInfo[] } }>(
-      "/admin/roles",
-    ),
-
-  listUsers: (q?: string) =>
-    api<{ success: boolean; data: { users: AdminStaffUser[] } }>(
-      `/admin/users${q ? `?q=${encodeURIComponent(q)}` : ""}`,
-    ),
-
-  assignUserRole: (userId: number, role: string) =>
-    api<{ success: boolean; message?: string; data: { user: AdminStaffUser } }>(
-      `/admin/users/${userId}/role`,
-      {
-        method: "PATCH",
-        body: JSON.stringify({ role }),
-      },
-    ),
 };

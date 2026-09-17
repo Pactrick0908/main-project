@@ -1,19 +1,9 @@
 import type { Request, Response } from "express";
 import { AdminService } from "../service/admin.service.js";
-import { authHasPermission } from "../middleware/auth.middleware.js";
-import { PERMISSIONS } from "../constants/permissions.js";
 
-export const getDashboard = async (req: Request, res: Response) => {
+export const getDashboard = async (_req: Request, res: Response) => {
   try {
-    const includeRevenue = authHasPermission(
-      req.auth,
-      PERMISSIONS.REVENUE_READ,
-    );
-    const includeOps = authHasPermission(req.auth, PERMISSIONS.ADMIN_WRITE);
-    const stats = await AdminService.getDashboard({
-      includeRevenue,
-      includeOps,
-    });
+    const stats = await AdminService.getDashboard();
     return res.json({ success: true, data: stats });
   } catch (error) {
     console.error("getDashboard:", error);

@@ -8,7 +8,6 @@ import ArtistPage from "@/pages/admin/ArtistPage";
 import EventPage from "@/pages/admin/EventPage";
 import TicketPage from "@/pages/admin/TicketPage";
 import AirdropPage from "@/pages/admin/AirdropPage";
-import UsersRolesPage from "@/pages/admin/UsersRolesPage";
 import MainLayout from "@/layouts/client/MainLayout";
 import LoginLayout from "@/layouts/auth/LoginLayout";
 import MarketplacePage from "@/pages/client/market/MarketplacePage";
@@ -18,8 +17,6 @@ import ScannerPage from "@/pages/admin/ScannerPage";
 import EventDetailPage from "@/pages/client/event/EventDetailPage";
 import EventResalePage from "@/pages/client/market/resale/EventResalePage";
 import SearchPage from "@/pages/client/search/SearchPage";
-import AdminGuard from "@/components/auth/AdminGuard";
-import { PERMISSIONS } from "@/lib/permissions";
 
 export const router = createBrowserRouter([
   {
@@ -68,42 +65,39 @@ export const router = createBrowserRouter([
   },
   {
     path: "admin",
-    element: <AdminGuard />,
+    element: <AdminLayout />,
     children: [
       {
-        element: <AdminLayout />,
-        children: [
-          {
-            index: true,
-            element: <Dashboard />,
-          },
-          {
-            element: (
-              <AdminGuard
-                permission={PERMISSIONS.ADMIN_WRITE}
-                fallback="/admin"
-              />
-            ),
-            children: [
-              { path: "places", element: <PlacePage /> },
-              { path: "organizers", element: <OrganizerPage /> },
-              { path: "artists", element: <ArtistPage /> },
-              { path: "events", element: <EventPage /> },
-              { path: "tickets", element: <TicketPage /> },
-              { path: "airdrop", element: <AirdropPage /> },
-              { path: "scanner", element: <ScannerPage /> },
-            ],
-          },
-          {
-            element: (
-              <AdminGuard
-                permission={PERMISSIONS.ROLES_GRANT}
-                fallback="/admin"
-              />
-            ),
-            children: [{ path: "users", element: <UsersRolesPage /> }],
-          },
-        ],
+        index: true,
+        element: <Dashboard />,
+      },
+      {
+        path: "places",
+        element: <PlacePage />,
+      },
+      {
+        path: "organizers",
+        element: <OrganizerPage />,
+      },
+      {
+        path: "artists",
+        element: <ArtistPage />,
+      },
+      {
+        path: "events",
+        element: <EventPage />,
+      },
+      {
+        path: "tickets",
+        element: <TicketPage />,
+      },
+      {
+        path: "airdrop",
+        element: <AirdropPage />,
+      },
+      {
+        path: "scanner",
+        element: <ScannerPage />,
       },
     ],
   },

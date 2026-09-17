@@ -9,7 +9,6 @@ export const generateToken = async (payload: {
   walletAddress: string;
   role?: string;
   userId?: number;
-  permissions?: string[];
 }) => {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN as any });
 };

@@ -13,7 +13,6 @@ import {
   MapPin,
   Building2,
   Mic2,
-  Users,
 } from "lucide-react";
 import { cn } from "cn";
 import { Separator } from "@/components/ui/separator";
@@ -21,7 +20,6 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
 import { authApi } from "@/api/auth.api";
 import { toast } from "@/lib/toast";
-import { PERMISSIONS } from "@/lib/permissions";
 
 const PROGRAM_ID = "GGadYLQQ5S2r26ajUHEiy7v2NMKN41rJXETb395kbq1H";
 
@@ -49,20 +47,15 @@ function navItem(
 
 export default function SidebarAdmin() {
   const location = useLocation();
-  const { user, login, logout, isAuthenticated, can } = useAuth();
+  const { user, login, logout, isAuthenticated } = useAuth();
   const [busy, setBusy] = useState(false);
   const path = location.pathname.replace(/\/$/, "") || "/admin";
-
-  const canWrite = can(PERMISSIONS.ADMIN_WRITE);
-  const canGrant = can(PERMISSIONS.ROLES_GRANT);
-  const canRevenue = can(PERMISSIONS.REVENUE_READ);
 
   const handleAdminLogin = async () => {
     setBusy(true);
     try {
       const session = await authApi.loginAdminDemo();
       login(session.user, session.token);
-      toast.success("Đăng nhập admin thành công");
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Đăng nhập admin thất bại",
@@ -73,14 +66,6 @@ export default function SidebarAdmin() {
   };
 
   const iconCls = "size-3.5 shrink-0";
-  const roleLabel =
-    user?.role === "admin"
-      ? "Admin"
-      : user?.role === "manager"
-        ? "Manager"
-        : user?.role === "organizer"
-          ? "Nhà tổ chức"
-          : user?.role ?? "customer";
 
   return (
     <aside className="sticky top-0 flex h-screen w-48 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
@@ -100,93 +85,70 @@ export default function SidebarAdmin() {
 
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
         <p className="px-2 pb-1 pt-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          {canWrite ? "Vận hành" : canRevenue ? "Doanh thu" : "Menu"}
+          Vận hành
         </p>
         {navItem(
           "/admin",
-          canRevenue && !canWrite ? "Doanh thu" : "Tổng quan",
+          "Tổng quan",
           <LayoutDashboard className={iconCls} />,
           path === "/admin",
         )}
-
-        {canWrite && (
-          <>
-            {navItem(
-              "/admin/places",
-              "Địa điểm",
-              <MapPin className={iconCls} />,
-              path.startsWith("/admin/places"),
-            )}
-            {navItem(
-              "/admin/organizers",
-              "Nhà cung cấp",
-              <Building2 className={iconCls} />,
-              path.startsWith("/admin/organizers"),
-            )}
-            {navItem(
-              "/admin/artists",
-              "Nghệ sĩ",
-              <Mic2 className={iconCls} />,
-              path.startsWith("/admin/artists"),
-            )}
-            {navItem(
-              "/admin/events",
-              "Sự kiện",
-              <CalendarDays className={iconCls} />,
-              path.startsWith("/admin/events"),
-            )}
-            {navItem(
-              "/admin/tickets",
-              "Vé đã bán",
-              <Ticket className={iconCls} />,
-              path.startsWith("/admin/tickets"),
-            )}
-            {navItem(
-              "/admin/airdrop",
-              "Cấp vé mời",
-              <Gift className={iconCls} />,
-              path.startsWith("/admin/airdrop"),
-            )}
-          </>
+        {navItem(
+          "/admin/places",
+          "Địa điểm",
+          <MapPin className={iconCls} />,
+          path.startsWith("/admin/places"),
+        )}
+        {navItem(
+          "/admin/organizers",
+          "Nhà cung cấp",
+          <Building2 className={iconCls} />,
+          path.startsWith("/admin/organizers"),
+        )}
+        {navItem(
+          "/admin/artists",
+          "Nghệ sĩ",
+          <Mic2 className={iconCls} />,
+          path.startsWith("/admin/artists"),
+        )}
+        {navItem(
+          "/admin/events",
+          "Sự kiện",
+          <CalendarDays className={iconCls} />,
+          path.startsWith("/admin/events"),
+        )}
+        {navItem(
+          "/admin/tickets",
+          "Vé đã bán",
+          <Ticket className={iconCls} />,
+          path.startsWith("/admin/tickets"),
+        )}
+        {navItem(
+          "/admin/airdrop",
+          "Cấp vé mời",
+          <Gift className={iconCls} />,
+          path.startsWith("/admin/airdrop"),
         )}
 
-        {canGrant && (
-          <>
-            <Separator className="my-2 bg-sidebar-border" />
-            <p className="px-2 pb-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-              Phân quyền
-            </p>
-            {navItem(
-              "/admin/users",
-              "Người dùng",
-              <Users className={iconCls} />,
-              path.startsWith("/admin/users"),
-            )}
-          </>
-        )}
+        <Separator className="my-2 bg-sidebar-border" />
 
-        {canWrite && (
-          <>
-            <Separator className="my-2 bg-sidebar-border" />
-            <p className="px-2 pb-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-              Cổng soát
-            </p>
-            <NavLink
-              to="/admin/scanner"
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] font-medium transition-colors",
-                  isActive
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
-                )
-              }
-            >
-              <ScanLine className={iconCls} />
-              <span className="truncate">Trạm QR 60s</span>
-            </NavLink>
-          </>
-        )}
+        <p className="px-2 pb-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          Cổng soát
+        </p>
+        <NavLink
+          to="/admin/scanner"
+          className={({ isActive }) =>
+            cn(
+              "flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] font-medium transition-colors",
+              isActive
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
+            )
+          }
+        >
+          <ScanLine className={iconCls} />
+          <span className="truncate">Trạm QR 60s</span>
+        </NavLink>
       </nav>
 
       <div className="space-y-2 border-t border-sidebar-border p-2.5">
@@ -194,7 +156,7 @@ export default function SidebarAdmin() {
           <div className="rounded-md bg-muted/60 px-2 py-1.5">
             <p className="truncate text-[11px] font-medium">{user.name}</p>
             <p className="truncate text-[9px] text-muted-foreground">
-              {roleLabel}
+              {user.role ?? "customer"}
             </p>
             <Button
               variant="ghost"
@@ -213,7 +175,7 @@ export default function SidebarAdmin() {
             onClick={() => void handleAdminLogin()}
           >
             <LogIn className="size-3" />
-            {busy ? "Đang vào…" : "Đăng nhập admin"}
+            {busy ? "Đang vào…" : "Đăng nhập"}
           </Button>
         )}
 
