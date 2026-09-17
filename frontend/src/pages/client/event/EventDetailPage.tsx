@@ -18,7 +18,6 @@ import { useAuth } from "@/context/AuthContext";
 import { ticketApi } from "@/api/ticket.api";
 import { eventApi } from "@/api/event.api";
 import VietQRModal from "./VietQRModal";
-import PurchaseSuccessModal from "./PurchaseSuccessModal";
 import SeatSelectionBoard, {
   getZoneSeatConfig,
   type ZoneTabInfo,
@@ -70,6 +69,12 @@ export default function EventDetailPage() {
       .then((res) => {
         if (isMounted && res.data?.event) {
           const dbEvent = res.data.event as any;
+          const st = String(dbEvent.status || "").toLowerCase();
+          if (st === "draft" || st === "ended" || st === "completed") {
+            toast.error("Sự kiện này chưa mở hoặc đã kết thúc.");
+            navigate("/");
+            return;
+          }
           const fallback = EVENTS_DATA[eventId] || EVENTS_DATA[1];
 
           // Ghép dữ liệu DB với fallback UI (banner, artist…)
@@ -187,14 +192,6 @@ export default function EventDetailPage() {
     totalAmount: number;
     checkoutUrl: string;
     qrCode: string;
-  } | null>(null);
-
-  const [successModal, setSuccessModal] = useState(false);
-  const [createdTicketInfo, setCreatedTicketInfo] = useState<{
-    zone: string;
-    qty: number;
-    total: number;
-    seats?: string[];
   } | null>(null);
 
   const formatVND = (amount: number) =>
@@ -436,6 +433,14 @@ export default function EventDetailPage() {
       if (res?.data) {
         setOrderInfo(res.data);
         setQrModal(true);
+        try {
+          localStorage.setItem(
+            "pendingPayOSOrderCode",
+            String(res.data.orderCode),
+          );
+        } catch {
+          /* ignore */
+        }
         startPolling(res.data.orderCode);
       }
     } catch (err: any) {
@@ -447,61 +452,66 @@ export default function EventDetailPage() {
     }
   };
 
-  const showPurchaseSuccess = (ticketCount?: number) => {
-    const zonesBought = event.zones.filter(
-      (z) => (selectedQuantities[z.id] || 0) > 0,
-    );
-    const zoneNames = zonesBought.map((z) => z.name).join(", ");
-    setCreatedTicketInfo({
-      zone: zoneNames || "Vé",
-      qty: ticketCount ?? totalTickets,
-      total: totalPriceVND,
-      seats: allSelectedSeats.length > 0 ? allSelectedSeats : undefined,
-    });
-    setSuccessModal(true);
+  const fulfillAfterPayOSPaid = async (orderCode: number) => {
+    await ticketApi.completePayOSOrder(orderCode);
+    for (let i = 0; i < 10; i++) {
+      const res = await ticketApi.getOrderStatus(orderCode);
+      if (res.data?.status === "PAID") return res.data;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    return null;
   };
 
-  // Polling trạng thái thanh toán từ PayOS
+  const finishPaidOrder = (orderCode: number) => {
+    try {
+      localStorage.removeItem("pendingPayOSOrderCode");
+    } catch {
+      /* ignore */
+    }
+    setQrModal(false);
+    navigate(`/my-tickets?orderCode=${orderCode}&status=PAID`);
+  };
+
+  // Poll PayOS; chỉ gọi webhook khi PayOS báo đã nhận tiền
   const startPolling = (orderCode: number) => {
-    const interval = setInterval(async () => {
+    let stopped = false;
+    let inFlight = false;
+    const poll = async () => {
+      if (stopped || inFlight) return stopped;
+      inFlight = true;
       try {
-        const res = await ticketApi.getOrderStatus(orderCode);
-        if (res.data?.status === "PAID") {
-          clearInterval(interval);
-          setQrModal(false);
-          showPurchaseSuccess(res.data.ticketIds?.length);
+        const payos = await ticketApi.getPayOSPaymentStatus(orderCode);
+        if (payos.data?.paid) {
+          const paid = await fulfillAfterPayOSPaid(orderCode);
+          stopped = true;
+          finishPaidOrder(orderCode);
+          return true;
         }
       } catch {
-        // Tiếp tục poll
+        // PayOS chưa PAID hoặc lỗi mạng — thử lại
+      } finally {
+        inFlight = false;
       }
+      return false;
+    };
+
+    void poll();
+    const interval = setInterval(async () => {
+      const done = await poll();
+      if (done) clearInterval(interval);
     }, 3000);
 
-    setTimeout(() => clearInterval(interval), 300000);
+    setTimeout(() => {
+      stopped = true;
+      clearInterval(interval);
+    }, 300000);
   };
 
   const handleSimulatePayment = async () => {
     if (!orderInfo) return;
     try {
-      await fetch("/api/v1/webhook/payos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code: "00",
-          data: { orderCode: orderInfo.orderCode, code: "00" },
-        }),
-      });
-      // Đợi fulfill rồi lấy status
-      for (let i = 0; i < 10; i++) {
-        await new Promise((r) => setTimeout(r, 400));
-        const res = await ticketApi.getOrderStatus(orderInfo.orderCode);
-        if (res.data?.status === "PAID") {
-          setQrModal(false);
-          showPurchaseSuccess(res.data.ticketIds?.length);
-          return;
-        }
-      }
-      setQrModal(false);
-      showPurchaseSuccess();
+      await fulfillAfterPayOSPaid(orderInfo.orderCode);
+      finishPaidOrder(orderInfo.orderCode);
     } catch (e) {
       toast.error(
         e instanceof Error
@@ -686,15 +696,6 @@ export default function EventDetailPage() {
         orderInfo={orderInfo}
         onClose={() => setQrModal(false)}
         onSimulateSuccess={handleSimulatePayment}
-        formatVND={formatVND}
-      />
-
-      {/* MODAL THÔNG BÁO MUA VÉ THÀNH CÔNG */}
-      <PurchaseSuccessModal
-        isOpen={successModal}
-        eventTitle={event.title}
-        ticketInfo={createdTicketInfo}
-        onClose={() => setSuccessModal(false)}
         formatVND={formatVND}
       />
     </div>

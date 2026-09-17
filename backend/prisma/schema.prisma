@@ -12,7 +12,8 @@ model Role {
   description String?  @db.VarChar(255)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(6)
 
-  users User[]
+  users          User[]
+  userRoleScopes UserRoleScope[]
 
   @@map("roles")
 }
@@ -27,12 +28,41 @@ model User {
   roleId        Int?     @default(1) @map("role_id")
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
 
-  role            Role?    @relation(fields: [roleId], references: [id], onDelete: SetNull)
-  organizedEvents Event[]
-  tickets         Ticket[]
-  orders          Order[]
+  role             Role?           @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  organizedEvents  Event[]
+  tickets          Ticket[]
+  orders           Order[]
+  roleScopes       UserRoleScope[] @relation("UserRoleScopes")
+  grantedRoleScopes UserRoleScope[] @relation("GrantedBy")
 
   @@map("users")
+}
+
+enum ScopeType {
+  GLOBAL
+  ORGANIZER
+  EVENT
+}
+
+/** Role gắn kèm phạm vi: toàn sàn / ban tổ chức / 1 sự kiện */
+model UserRoleScope {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  roleId    Int       @map("role_id")
+  scopeType ScopeType @map("scope_type")
+  /** GLOBAL = 0; ORGANIZER = users.id BTC; EVENT = events.id */
+  scopeId   Int       @default(0) @map("scope_id")
+  grantedBy Int?      @map("granted_by")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+
+  user    User  @relation("UserRoleScopes", fields: [userId], references: [id], onDelete: Cascade)
+  role    Role  @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  granter User? @relation("GrantedBy", fields: [grantedBy], references: [id], onDelete: SetNull)
+
+  @@unique([userId, roleId, scopeType, scopeId])
+  @@index([userId])
+  @@index([scopeType, scopeId])
+  @@map("user_role_scopes")
 }
 
 model Place {

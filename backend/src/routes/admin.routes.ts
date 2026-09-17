@@ -25,11 +25,24 @@ import {
   uploadImage,
   uploadImageMiddleware,
 } from "../controller/upload.controller.js";
-import { requireAdmin } from "../middleware/auth.middleware.js";
+import { requireAuth, rejectCustomer } from "../middleware/auth.middleware.js";
+import {
+  assignRole,
+  getMyPermissions,
+  getRbacCatalog,
+  revokeRole,
+} from "../controller/rbac.controller.js";
 
 const router = Router();
 
+router.use(rejectCustomer);
+
 // router.use(requireAdmin);
+
+router.get("/me/permissions", requireAuth, getMyPermissions);
+router.get("/rbac/catalog", requireAuth, getRbacCatalog);
+router.post("/roles/assign", requireAuth, assignRole);
+router.post("/roles/revoke", requireAuth, revokeRole);
 
 router.get("/dashboard", getDashboard);
 router.get("/tickets", listAdminTickets);

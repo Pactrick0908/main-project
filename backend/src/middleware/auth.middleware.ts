@@ -68,7 +68,28 @@ export function requireScanner(req: Request, res: Response, next: NextFunction) 
   });
 }
 
-/** Admin only — JWT role admin (dev: cho phép nếu đã đăng nhập) */
+/** Chặn JWT role customer khỏi mọi API admin */
+export function rejectCustomer(req: Request, res: Response, next: NextFunction) {
+  const header = req.headers.authorization;
+  if (!header?.startsWith("Bearer ")) return next();
+
+  try {
+    const payload = jwt.verify(header.slice(7), JWT_SECRET) as AuthUser;
+    req.auth = payload;
+    const role = (payload.role ?? "customer").toLowerCase();
+    if (role === "customer") {
+      return res.status(403).json({
+        success: false,
+        message: "Tài khoản khách hàng không được vào trang quản trị",
+        code: "CUSTOMER_FORBIDDEN",
+      });
+    }
+  } catch {
+    /* token lỗi: để requireAuth xử lý trên route cần đăng nhập */
+  }
+  return next();
+}
+
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) {

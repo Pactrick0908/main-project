@@ -1,9 +1,13 @@
 import type { Request, Response } from "express";
 import { AdminService } from "../service/admin.service.js";
 
-export const getDashboard = async (_req: Request, res: Response) => {
+export const getDashboard = async (req: Request, res: Response) => {
   try {
-    const stats = await AdminService.getDashboard();
+    const organizerId =
+      req.auth?.role === "organizer" && req.auth.userId
+        ? req.auth.userId
+        : undefined;
+    const stats = await AdminService.getDashboard(organizerId);
     return res.json({ success: true, data: stats });
   } catch (error) {
     console.error("getDashboard:", error);

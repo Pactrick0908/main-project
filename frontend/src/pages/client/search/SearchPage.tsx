@@ -81,7 +81,7 @@ export default function SearchPage() {
   const [events, setEvents] = useState<EventDto[]>([]);
   const [artists, setArtists] = useState<SearchArtist[]>([]);
   const [hotKeywords, setHotKeywords] = useState<string[]>(FALLBACK_KEYWORDS);
-  const [upcoming, setUpcoming] = useState<EventDto[]>([]);
+  const [openEvents, setOpenEvents] = useState<EventDto[]>([]);
 
   const runSearch = useCallback(async (q: string) => {
     setLoading(true);
@@ -94,7 +94,6 @@ export default function SearchPage() {
           ? res.data.hotKeywords
           : FALLBACK_KEYWORDS,
       );
-      setUpcoming(res.data.upcoming || []);
     } catch (err) {
       console.warn("[SearchPage]", err);
       setEvents([]);
@@ -109,6 +108,21 @@ export default function SearchPage() {
     void runSearch(qParam);
   }, [qParam, runSearch]);
 
+  useEffect(() => {
+    let mounted = true;
+    eventApi
+      .listEvents({ status: "open" })
+      .then((res) => {
+        if (mounted) setOpenEvents(res.data?.events ?? []);
+      })
+      .catch(() => {
+        if (mounted) setOpenEvents([]);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const submit = (raw?: string) => {
     const next = (raw ?? input).trim();
     if (next) {
@@ -122,8 +136,8 @@ export default function SearchPage() {
   const totalHits = events.length + artists.length;
 
   const upcomingCards = useMemo(
-    () => upcoming.slice(0, 3).map(toUpcomingCard),
-    [upcoming],
+    () => openEvents.slice(0, 6).map(toUpcomingCard),
+    [openEvents],
   );
 
   return (
@@ -314,7 +328,7 @@ export default function SearchPage() {
         <section>
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-base font-bold text-white">
-              Sự kiện sắp diễn ra
+              Đang mở bán
             </h2>
             <Link
               to="/#events"
@@ -334,7 +348,7 @@ export default function SearchPage() {
           </div>
           {upcomingCards.length === 0 ? (
             <p className="py-8 text-center text-xs text-zinc-500">
-              Chưa có sự kiện sắp diễn ra.
+              Chưa có sự kiện đang mở bán.
             </p>
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

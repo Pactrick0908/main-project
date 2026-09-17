@@ -14,9 +14,11 @@ import MarketplacePage from "@/pages/client/market/MarketplacePage";
 import AdminLayout from "@/layouts/admin/AdminLayout";
 import MyTicketsPage from "@/pages/client/ticket/MyTicketsPage";
 import ScannerPage from "@/pages/admin/ScannerPage";
+import RbacPage from "@/pages/admin/RbacPage";
 import EventDetailPage from "@/pages/client/event/EventDetailPage";
 import EventResalePage from "@/pages/client/market/resale/EventResalePage";
 import SearchPage from "@/pages/client/search/SearchPage";
+import NotFoundPage from "@/pages/NotFoundPage";
 
 export const router = createBrowserRouter([
   {
@@ -99,10 +101,14 @@ export const router = createBrowserRouter([
         path: "scanner",
         element: <ScannerPage />,
       },
+      {
+        path: "rbac",
+        element: <RbacPage />,
+      },
     ],
   },
   {
     path: "*",
-    element: <div>404 - Trang không tồn tại</div>,
+    element: <NotFoundPage />,
   },
 ]);

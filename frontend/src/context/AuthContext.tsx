@@ -1,10 +1,15 @@
 import React, { createContext, useContext, useState, useCallback } from "react";
+import { googleLogout } from "@react-oauth/google";
 import {
   type AuthUser,
   getToken,
   getStoredUser,
   saveSession,
   clearSession,
+  clearGoogleIdentity,
+  isCustomerRole,
+  getStaffRole,
+  type StaffRole,
 } from "@/api/auth.api";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -13,6 +18,8 @@ interface AuthContextType {
   user: AuthUser | null;
   token: string | null;
   isAuthenticated: boolean;
+  isCustomer: boolean;
+  staffRole: StaffRole | null;
   login: (user: AuthUser, token: string) => void;
   logout: () => void;
 }
@@ -36,17 +43,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const logout = useCallback(() => {
+    const email = user?.email;
+    try {
+      googleLogout();
+    } catch {
+      /* ignore */
+    }
+    clearGoogleIdentity(email);
     setUser(null);
     setToken(null);
     clearSession();
-  }, []);
+  }, [user?.email]);
+
+  const isAuthenticated = !!user && !!token;
 
   return (
     <AuthContext.Provider
       value={{
         user,
         token,
-        isAuthenticated: !!user && !!token,
+        isAuthenticated,
+        isCustomer: isAuthenticated && isCustomerRole(user?.role ?? "customer"),
+        staffRole: isAuthenticated ? getStaffRole(user?.role) : null,
         login,
         logout,
       }}

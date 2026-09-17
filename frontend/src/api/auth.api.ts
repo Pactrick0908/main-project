@@ -15,6 +15,37 @@ export interface AuthSession {
   user: AuthUser;
 }
 
+export function isCustomerRole(role?: string | null): boolean {
+  const normalized = (role ?? "").trim().toLowerCase();
+  return normalized === "customer" || normalized === "khách hàng";
+}
+
+export type StaffRole = "admin" | "organizer" | "scanner";
+
+export function getStaffRole(role?: string | null): StaffRole | null {
+  const normalized = (role ?? "").trim().toLowerCase();
+  if (normalized === "admin" || normalized === "super_admin") return "admin";
+  if (normalized === "organizer" || normalized === "organizer_admin") {
+    return "organizer";
+  }
+  if (normalized === "scanner" || normalized === "checkin_staff") {
+    return "scanner";
+  }
+  return null;
+}
+
+export function organizerCanAccess(pathname: string): boolean {
+  const path = pathname.replace(/\/$/, "") || "/admin";
+  if (path === "/admin") return true;
+  return [
+    "/admin/places",
+    "/admin/artists",
+    "/admin/events",
+    "/admin/tickets",
+    "/admin/airdrop",
+  ].some((prefix) => path.startsWith(prefix));
+}
+
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "/api/v1";
@@ -48,6 +79,30 @@ export function saveSession(token: string, user: AuthUser): void {
 export function clearSession(): void {
   localStorage.removeItem(KEYS.token);
   localStorage.removeItem(KEYS.user);
+}
+
+/** Tắt auto-select Google để lần đăng nhập sau được chọn lại tài khoản. */
+export function clearGoogleIdentity(email?: string | null): void {
+  try {
+    const g = (
+      window as unknown as {
+        google?: {
+          accounts?: {
+            id?: {
+              disableAutoSelect?: () => void;
+              revoke?: (hint: string, done: () => void) => void;
+            };
+          };
+        };
+      }
+    ).google?.accounts?.id;
+    g?.disableAutoSelect?.();
+    if (email) {
+      g?.revoke?.(email, () => {});
+    }
+  } catch {
+    /* GIS chưa load — không chặn logout */
+  }
 }
 
 // ─── API calls ───────────────────────────────────────────────────────────────

@@ -150,6 +150,7 @@ function serializeEvent(event: {
     title: event.title,
     description: event.description,
     organizerName: event.organizerName ?? null,
+    organizerId: event.organizer?.id ?? null,
     organizer: organizerDisplay,
     bannerUrl: event.bannerUrl,
     bannerImage: event.bannerUrl,
@@ -478,12 +479,19 @@ export class EventService {
     }
   }
 
-  static async list() {
+  static async list(statusFilter?: string) {
     const events = await prisma.event.findMany({
       include: eventIncludeList,
       orderBy: { id: "desc" },
     });
-    return events.map(serializeEvent);
+    const serialized = events.map(serializeEvent);
+    const wanted = String(statusFilter ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => normalizeEventStatus(s));
+    if (!wanted.length) return serialized;
+    return serialized.filter((e) => wanted.includes(e.status as (typeof wanted)[number]));
   }
 
   /**
@@ -507,7 +515,12 @@ export class EventService {
       }),
     ]);
 
-    const serialized = allEvents.map(serializeEvent);
+    const serialized = allEvents
+      .map(serializeEvent)
+      .filter((e) => {
+        const st = String(e.status || "").toLowerCase();
+        return st === "upcoming" || st === "open";
+      });
 
     // Từ khóa nổi bật: nghệ sĩ có gắn sự kiện + một số title sự kiện
     const artistKeywords = allArtists
@@ -526,19 +539,10 @@ export class EventService {
       ...new Set([...artistKeywords, ...eventKeywords].filter(Boolean)),
     ].slice(0, 10);
 
-    // Sắp diễn ra: upcoming/open, có schedule trong tương lai hoặc status phù hợp
-    const now = Date.now();
+    // Chỉ sự kiện upcoming (carousel / gợi ý)
     const upcoming = serialized
-      .filter((e) => {
-        const st = String(e.status || "").toLowerCase();
-        if (st === "ended" || st === "draft") return false;
-        const start = e.schedules?.[0]?.startTime
-          ? new Date(e.schedules[0].startTime).getTime()
-          : null;
-        if (start != null) return start >= now - 24 * 60 * 60 * 1000;
-        return st === "upcoming" || st === "open" || st === "active";
-      })
-      .slice(0, 3);
+      .filter((e) => String(e.status || "").toLowerCase() === "upcoming")
+      .slice(0, 6);
 
     if (!query) {
       const stars = allArtists

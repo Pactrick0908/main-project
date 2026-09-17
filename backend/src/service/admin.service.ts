@@ -3,7 +3,9 @@ import { WalletService } from "./wallet.service.js";
 import { TicketService } from "./ticket.service.js";
 
 export class AdminService {
-  static async getDashboard() {
+  static async getDashboard(organizerId?: number) {
+    const eventWhere = organizerId ? { organizerId } : {};
+    const viaEvent = organizerId ? { event: { organizerId } } : {};
     const [
       soldTickets,
       checkedIn,
@@ -15,16 +17,22 @@ export class AdminService {
       paidOrders,
     ] = await Promise.all([
       prisma.ticket.count({
-        where: { status: { in: ["sold", "checked_in", "valid"] } },
+        where: { status: { in: ["sold", "checked_in", "valid"] }, ...viaEvent },
       }),
-      prisma.ticket.count({ where: { status: "checked_in" } }),
-      prisma.ticket.count({ where: { status: "revoked" } }),
+      prisma.ticket.count({ where: { status: "checked_in", ...viaEvent } }),
+      prisma.ticket.count({ where: { status: "revoked", ...viaEvent } }),
       prisma.event.count({
-        where: { status: { in: ["open", "active", "published"] } },
+        where: {
+          status: { in: ["open", "active", "published"] },
+          ...eventWhere,
+        },
       }),
-      prisma.event.count(),
+      prisma.event.count({ where: eventWhere }),
       prisma.ticket.findMany({
-        where: { status: { in: ["sold", "checked_in", "valid", "revoked"] } },
+        where: {
+          status: { in: ["sold", "checked_in", "valid", "revoked"] },
+          ...viaEvent,
+        },
         include: {
           event: true,
           eventZone: { include: { zone: true } },
@@ -34,16 +42,21 @@ export class AdminService {
         orderBy: { id: "desc" },
         take: 8,
       }),
-      prisma.adminBalance.findFirst({ orderBy: { id: "asc" } }),
+      organizerId
+        ? Promise.resolve(null)
+        : prisma.adminBalance.findFirst({ orderBy: { id: "asc" } }),
       prisma.order.aggregate({
-        where: { status: "PAID" },
+        where: {
+          status: "PAID",
+          ...(organizerId ? { event: { organizerId } } : {}),
+        },
         _sum: { totalAmount: true, adminAmount: true, systemAmount: true },
         _count: true,
       }),
     ]);
 
     const ticketRevenue = await prisma.ticket.findMany({
-      where: { status: { in: ["sold", "checked_in", "valid"] } },
+      where: { status: { in: ["sold", "checked_in", "valid"] }, ...viaEvent },
       select: { eventZone: { select: { price: true } } },
     });
     const revenueFromTickets = ticketRevenue.reduce(
@@ -58,8 +71,10 @@ export class AdminService {
       checkInRate: soldTickets ? Math.round((checkedIn / soldTickets) * 100) : 0,
       eventsActive,
       eventsTotal,
-      revenue: Number(balance?.totalRevenue ?? revenueFromTickets),
-      systemRevenue: Number(balance?.systemRevenue ?? 0),
+      revenue: organizerId
+        ? revenueFromTickets
+        : Number(balance?.totalRevenue ?? revenueFromTickets),
+      systemRevenue: organizerId ? 0 : Number(balance?.systemRevenue ?? 0),
       paidOrders: paidOrders._count,
       orderRevenue: Number(paidOrders._sum.totalAmount ?? 0),
       recentTickets: recentTickets.map((t) => ({

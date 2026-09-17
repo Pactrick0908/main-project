@@ -1,6 +1,7 @@
 import { payOS } from "../config/payos.config.js";
 import { prisma } from "../lib/prisma.js";
 import type { Prisma } from "@prisma/client";
+import { SolanaService } from "./solana.service.js";
 
 export type OrderItemInput = {
   eventZoneId: number;
@@ -181,14 +182,17 @@ export class OrderService {
       `${Date.now().toString().slice(-7)}${Math.floor(Math.random() * 900 + 100)}`,
     );
 
-    const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+    const clientUrl = (
+      process.env.CLIENT_URL || "http://localhost:5173"
+    ).replace(/\/$/, "");
 
+    // PayOS tự gắn code, id, cancel, status, orderCode vào returnUrl
     const paymentLinkData = {
       orderCode,
       amount: totalAmount,
       description: `VE${orderCode}`.slice(0, 25),
-      returnUrl: `${clientUrl}/my-tickets?status=success&orderCode=${orderCode}`,
-      cancelUrl: `${clientUrl}/events/${event.id}?status=cancelled`,
+      returnUrl: `${clientUrl}/my-tickets?orderCode=${orderCode}`,
+      cancelUrl: `${clientUrl}/events/${event.id}`,
     };
 
     let paymentLinkResponse: any;
@@ -345,6 +349,163 @@ export class OrderService {
     );
 
     return { ticketIds: createdIds, alreadyFulfilled: false };
+  }
+
+  /**
+   * Đánh PAID (idempotent) rồi tạo vé. Dùng chung cho webhook và xác nhận PayOS API.
+   */
+  static async markPaidAndFulfill(orderId: number) {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { user: true },
+    });
+    if (!order) {
+      throw Object.assign(new Error("Không tìm thấy đơn hàng"), { status: 404 });
+    }
+
+    if (order.status !== "PAID") {
+      await prisma.$transaction(async (tx) => {
+        const updated = await tx.order.updateMany({
+          where: { id: order.id, status: { not: "PAID" } },
+          data: { status: "PAID" },
+        });
+        if (updated.count === 0) return;
+
+        const currentBalance = await tx.adminBalance.findFirst();
+        if (!currentBalance) {
+          await tx.adminBalance.create({
+            data: {
+              totalRevenue: order.adminAmount,
+              systemRevenue: order.systemAmount,
+            },
+          });
+        } else {
+          await tx.adminBalance.update({
+            where: { id: currentBalance.id },
+            data: {
+              totalRevenue: { increment: order.adminAmount },
+              systemRevenue: { increment: order.systemAmount },
+            },
+          });
+        }
+      });
+    }
+
+    const fulfillResult = await OrderService.fulfillPaidOrder(order.id);
+
+    SolanaService.recordTicketPurchaseOnChain({
+      orderId: order.id,
+      recipientWallet: order.user?.walletAddress,
+      solAmount: order.solAmount,
+    }).catch((solErr: any) => {
+      console.error(
+        `❌ Lỗi Background Solana Order #${order.id}:`,
+        solErr?.message,
+      );
+    });
+
+    return {
+      ticketIds: fulfillResult.ticketIds,
+      alreadyFulfilled: fulfillResult.alreadyFulfilled,
+      ownerWallet: order.user?.walletAddress ?? null,
+    };
+  }
+
+  /** Chỉ hỏi PayOS — không cấp vé. */
+  static async lookupPayOSPayment(order: {
+    orderCode: bigint;
+    paymentLinkId: string | null;
+  }) {
+    const ids: Array<string | number> = [];
+    if (order.paymentLinkId && !order.paymentLinkId.startsWith("mock_")) {
+      ids.push(order.paymentLinkId);
+    }
+    ids.push(Number(order.orderCode.toString()));
+
+    let lastError: string | undefined;
+    for (const id of ids) {
+      try {
+        const info: any = await payOS.getPaymentLinkInformation(id as any);
+        const payload = info?.status == null && info?.data ? info.data : info;
+        if (payload?.status || payload?.amountPaid != null) {
+          return { payload, error: undefined };
+        }
+      } catch (err: any) {
+        lastError = err?.message;
+      }
+
+      try {
+        const res = await fetch(
+          `https://api-merchant.payos.vn/v2/payment-requests/${id}`,
+          {
+            headers: {
+              "x-client-id": process.env.PAYOS_CLIENT_ID || "",
+              "x-api-key": process.env.PAYOS_API_KEY || "",
+            },
+          },
+        );
+        const json: any = await res.json().catch(() => ({}));
+        const payload = json?.data ?? json;
+        if (payload?.status || payload?.amountPaid != null) {
+          return { payload, error: undefined };
+        }
+        lastError = json?.desc || json?.message || `HTTP ${res.status}`;
+      } catch (err: any) {
+        lastError = err?.message;
+      }
+    }
+
+    return { payload: null as any, error: lastError };
+  }
+
+  /**
+   * Trạng thái thanh toán trên PayOS. Không gọi webhook / không tạo vé.
+   */
+  static async getPayOSPaymentStatus(orderCode: string | number) {
+    const order = await prisma.order.findUnique({
+      where: { orderCode: BigInt(orderCode) },
+      select: {
+        orderCode: true,
+        status: true,
+        totalAmount: true,
+        paymentLinkId: true,
+      },
+    });
+    if (!order) return null;
+
+    if (order.status === "PAID") {
+      return {
+        orderCode: order.orderCode.toString(),
+        orderStatus: "PAID" as const,
+        payosStatus: "PAID",
+        paid: true,
+      };
+    }
+
+    const { payload, error } = await OrderService.lookupPayOSPayment(order);
+    const status = String(payload?.status ?? "").toUpperCase();
+    const amountPaid = Number(payload?.amountPaid ?? 0);
+    const total = Number(order.totalAmount);
+    const paid =
+      status === "PAID" ||
+      (Number.isFinite(amountPaid) && amountPaid >= total && amountPaid > 0);
+
+    if (payload) {
+      console.log(
+        `🔎 [PayOS] Order #${orderCode} status=${status || "(empty)"} amountPaid=${amountPaid} paid=${paid}`,
+      );
+    } else {
+      console.warn(`⚠️ [PayOS] Không lấy được trạng thái đơn #${orderCode}:`, error);
+    }
+
+    return {
+      orderCode: order.orderCode.toString(),
+      orderStatus: order.status,
+      payosStatus: status || "UNKNOWN",
+      paid,
+      amountPaid: Number.isFinite(amountPaid) ? amountPaid : 0,
+      error: paid ? undefined : error,
+    };
   }
 
   static async getOrderStatus(orderCode: string | number) {

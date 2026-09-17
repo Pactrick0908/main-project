@@ -2,9 +2,11 @@ import type { Request, Response } from "express";
 import { EventService } from "../service/event.service.js";
 import { CatalogService } from "../service/catalog.service.js";
 
-export const listEvents = async (_req: Request, res: Response) => {
+export const listEvents = async (req: Request, res: Response) => {
   try {
-    const events = await EventService.list();
+    const status =
+      typeof req.query.status === "string" ? req.query.status : undefined;
+    const events = await EventService.list(status);
     return res.json({ success: true, data: { events } });
   } catch (error) {
     console.error("listEvents:", error);

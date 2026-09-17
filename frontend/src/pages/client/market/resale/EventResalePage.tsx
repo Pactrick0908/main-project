@@ -2,7 +2,6 @@ import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   getResaleTicketsByEventId,
-  MARKETPLACE_TICKETS,
   type MarketplaceTicket,
 } from "../marketplace.data";
 import { EVENTS_DATA } from "@/data/events.data";
@@ -28,6 +27,11 @@ export default function EventResalePage() {
     eventApi.getEventById(eventId)
       .then((res) => {
         if (isMounted && res.data?.event) {
+          const st = String(res.data.event.status || "").toLowerCase();
+          if (st === "draft" || st === "ended" || st === "completed") {
+            navigate("/");
+            return;
+          }
           setOfficialEvent(res.data.event);
         }
       })

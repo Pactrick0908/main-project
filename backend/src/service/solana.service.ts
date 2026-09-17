@@ -19,26 +19,33 @@ export class SolanaService {
     "confirmed"
   );
 
+  /** Cache để mọi lần mint/ghi on-chain dùng đúng 1 hot wallet trong process. */
+  private static cachedKeypair: Keypair | null = null;
+
   /**
-   * Khởi tạo Keypair từ private key trong file .env
+   * Khởi tạo Keypair từ SERVER_PRIVATE_KEY trong file .env
    * Hỗ trợ định dạng Base58 string hoặc JSON array [1,2,3...]
    */
   private static getServerKeypair(): Keypair {
+    if (this.cachedKeypair) return this.cachedKeypair;
+
     const rawKey = process.env.SERVER_PRIVATE_KEY;
     if (!rawKey) {
-      console.warn("⚠️ [Solana] SERVER_PRIVATE_KEY chưa được cấu hình. Tạm thời sinh key ngẫu nhiên cho dev.");
-      return Keypair.generate();
+      throw new Error(
+        "Thiếu SERVER_PRIVATE_KEY trong .env — không thể dùng hot wallet cố định.",
+      );
     }
 
     try {
       const trimmed = rawKey.trim();
-      if (trimmed.startsWith("[")) {
-        return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(trimmed)));
-      }
-      return Keypair.fromSecretKey(bs58.decode(trimmed));
+      const keypair = trimmed.startsWith("[")
+        ? Keypair.fromSecretKey(Uint8Array.from(JSON.parse(trimmed)))
+        : Keypair.fromSecretKey(bs58.decode(trimmed));
+      this.cachedKeypair = keypair;
+      return keypair;
     } catch (error) {
       console.error("❌ [Solana] Lỗi phân tích SERVER_PRIVATE_KEY:", error);
-      return Keypair.generate();
+      throw new Error("SERVER_PRIVATE_KEY không hợp lệ (cần Base58 hoặc JSON array).");
     }
   }
 

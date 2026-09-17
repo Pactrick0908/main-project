@@ -90,6 +90,28 @@ export const getOrderStatus = async (req: Request, res: Response) => {
 };
 
 /**
+ * Hỏi PayOS đã nhận tiền chưa — không cấp vé.
+ * GET /api/v1/orders/:orderCode/payos
+ */
+export const getPayOSPaymentStatus = async (req: Request, res: Response) => {
+  try {
+    const { orderCode } = req.params;
+    if (!orderCode) {
+      return res.status(400).json({ success: false, message: "Thiếu orderCode" });
+    }
+
+    const data = await OrderService.getPayOSPaymentStatus(orderCode);
+    if (!data) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
+    }
+
+    return res.status(200).json({ success: true, data });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error?.message });
+  }
+};
+
+/**
  * Tra cứu tên chủ sở hữu tài khoản ngân hàng qua VietQR API
  * POST /api/v1/orders/lookup-account
  */

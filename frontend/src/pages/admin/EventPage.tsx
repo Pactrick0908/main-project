@@ -195,7 +195,7 @@ function formatScheduleLabel(iso: string): string {
 }
 
 export default function EventPage() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, staffRole, user } = useAuth();
 
   const [events, setEvents] = useState<AdminEvent[]>([]);
   const [places, setPlaces] = useState<AdminPlace[]>([]);
@@ -254,7 +254,11 @@ export default function EventPage() {
           .listArtists()
           .catch(() => ({ data: { artists: [] as AdminArtist[] } })),
       ]);
-      setEvents(ev.data.events);
+      setEvents(
+        staffRole === "organizer" && user?.id
+          ? ev.data.events.filter((e) => e.organizerId === user.id)
+          : ev.data.events,
+      );
       setPlaces(pl.data.places);
       setOrganizers(org.data.organizers);
       setArtists(art.data.artists);
@@ -264,7 +268,7 @@ export default function EventPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [staffRole, user?.id]);
 
   useEffect(() => {
     if (!isAuthenticated) {

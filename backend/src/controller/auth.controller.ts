@@ -12,13 +12,41 @@ export interface GoogleJwtPayload {
   family_name?: string;
 }
 
-export const login = async (req: Request, res: Response) => {
-  const idToken = req.body.token;
-  if (!idToken) return res.status(401).json({ message: "Chưa đăng nhập" });
+async function resolveGoogleUser(token: string): Promise<GoogleJwtPayload> {
+  if (token.split(".").length === 3) {
+    const decoded = jwtDecode<GoogleJwtPayload>(token);
+    if (decoded?.sub && decoded?.email) return decoded;
+  }
 
-  const userInfo = jwtDecode<GoogleJwtPayload>(idToken);
+  const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    throw Object.assign(new Error("Token Google không hợp lệ"), { status: 401 });
+  }
+  const profile = (await res.json()) as Partial<GoogleJwtPayload>;
+  if (!profile.sub || !profile.email) {
+    throw Object.assign(new Error("Không đọc được tài khoản Google"), {
+      status: 401,
+    });
+  }
+  return {
+    sub: profile.sub,
+    email: profile.email,
+    email_verified: Boolean(profile.email_verified),
+    name: profile.name || profile.email,
+    picture: profile.picture || "",
+  };
+}
+
+export const login = async (req: Request, res: Response) => {
+  const token = req.body.token;
+  if (!token || typeof token !== "string") {
+    return res.status(401).json({ message: "Chưa đăng nhập" });
+  }
 
   try {
+    const userInfo = await resolveGoogleUser(token);
     const result = await AuthService.login(userInfo);
 
     return res.status(200).json({
@@ -28,7 +56,7 @@ export const login = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error("Login Error: ", error);
-    return res.status(500).json({
+    return res.status(error?.status ?? 500).json({
       success: false,
       message: error?.message || "Lỗi Server khi đăng nhập (Kiểm tra kết nối Database)",
     });

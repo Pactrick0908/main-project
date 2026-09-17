@@ -26,7 +26,7 @@ import { formatVND, StatusBadge } from "@/pages/admin/adminShared";
 import { AdminPageShell } from "@/layouts/admin/HeaderAdmin";
 
 export default function Dashboard() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, staffRole, user } = useAuth();
   const navigate = useNavigate();
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -43,14 +43,19 @@ export default function Dashboard() {
         adminApi.listEvents(),
       ]);
       if (dash) setStats(dash.data);
-      setEvents(ev.data.events);
+      const rows = ev.data.events;
+      setEvents(
+        staffRole === "organizer" && user?.id
+          ? rows.filter((e) => e.organizerId === user.id)
+          : rows,
+      );
       setLastUpdated(new Date().toLocaleTimeString("vi-VN"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Không tải được dữ liệu admin");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [staffRole, user?.id]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -66,12 +71,16 @@ export default function Dashboard() {
   return (
     <AdminPageShell
       title="Tổng quan"
-      description="Doanh thu, vé bán và tỷ lệ check-in theo thời gian thực"
+      description={
+        staffRole === "organizer"
+          ? "Doanh thu và vé của sự kiện bạn tổ chức"
+          : "Doanh thu, vé bán và tỷ lệ check-in theo thời gian thực"
+      }
       lastUpdated={lastUpdated}
       loading={loading}
       error={error}
       onRefresh={() => void refresh()}
-      showCreateEvent
+      showCreateEvent={false}
     >
       <div className="space-y-6">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

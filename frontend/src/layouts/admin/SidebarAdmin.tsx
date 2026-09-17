@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useState } from "react";
-import { Link, NavLink, useLocation } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   CalendarDays,
@@ -13,6 +13,7 @@ import {
   MapPin,
   Building2,
   Mic2,
+  Shield,
 } from "lucide-react";
 import { cn } from "cn";
 import { Separator } from "@/components/ui/separator";
@@ -47,9 +48,11 @@ function navItem(
 
 export default function SidebarAdmin() {
   const location = useLocation();
-  const { user, login, logout, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  const { user, login, logout, isAuthenticated, staffRole } = useAuth();
   const [busy, setBusy] = useState(false);
   const path = location.pathname.replace(/\/$/, "") || "/admin";
+  const isAdmin = !staffRole || staffRole === "admin";
 
   const handleAdminLogin = async () => {
     setBusy(true);
@@ -99,12 +102,13 @@ export default function SidebarAdmin() {
           <MapPin className={iconCls} />,
           path.startsWith("/admin/places"),
         )}
-        {navItem(
-          "/admin/organizers",
-          "Nhà cung cấp",
-          <Building2 className={iconCls} />,
-          path.startsWith("/admin/organizers"),
-        )}
+        {isAdmin &&
+          navItem(
+            "/admin/organizers",
+            "Nhà cung cấp",
+            <Building2 className={iconCls} />,
+            path.startsWith("/admin/organizers"),
+          )}
         {navItem(
           "/admin/artists",
           "Nghệ sĩ",
@@ -129,26 +133,36 @@ export default function SidebarAdmin() {
           <Gift className={iconCls} />,
           path.startsWith("/admin/airdrop"),
         )}
+        {isAdmin &&
+          navItem(
+            "/admin/rbac",
+            "Phân quyền",
+            <Shield className={iconCls} />,
+            path.startsWith("/admin/rbac"),
+          )}
 
-        <Separator className="my-2 bg-sidebar-border" />
-
-        <p className="px-2 pb-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          Cổng soát
-        </p>
-        <NavLink
-          to="/admin/scanner"
-          className={({ isActive }) =>
-            cn(
-              "flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] font-medium transition-colors",
-              isActive
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
-            )
-          }
-        >
-          <ScanLine className={iconCls} />
-          <span className="truncate">Trạm QR 60s</span>
-        </NavLink>
+        {isAdmin && (
+          <>
+            <Separator className="my-2 bg-sidebar-border" />
+            <p className="px-2 pb-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              Cổng soát
+            </p>
+            <NavLink
+              to="/admin/scanner"
+              className={({ isActive }) =>
+                cn(
+                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] font-medium transition-colors",
+                  isActive
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
+                )
+              }
+            >
+              <ScanLine className={iconCls} />
+              <span className="truncate">Trạm QR 60s</span>
+            </NavLink>
+          </>
+        )}
       </nav>
 
       <div className="space-y-2 border-t border-sidebar-border p-2.5">
@@ -162,7 +176,10 @@ export default function SidebarAdmin() {
               variant="ghost"
               size="xs"
               className="mt-0.5 h-5 px-0 text-[10px] text-muted-foreground"
-              onClick={logout}
+              onClick={() => {
+                logout();
+                navigate("/login", { replace: true });
+              }}
             >
               Đăng xuất
             </Button>

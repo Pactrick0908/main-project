@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
-import { Plus, RefreshCw, ShieldAlert } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { useAuth } from "@/context/AuthContext";
 import type { ConfirmModalState } from "@/pages/admin/adminShared";
+import NotFoundPage from "@/pages/NotFoundPage";
 
 type HeaderAdminProps = {
   title: string;
@@ -19,13 +19,10 @@ type HeaderAdminProps = {
 export function HeaderAdmin({
   title,
   description,
-  lastUpdated,
   onRefresh,
-  showCreateEvent = true,
   actions,
 }: HeaderAdminProps) {
   const { user } = useAuth();
-  const navigate = useNavigate();
 
   return (
     <header className="sticky top-0 z-10 border-b border-border bg-background/85 px-6 backdrop-blur-md sm:px-8">
@@ -35,11 +32,6 @@ export function HeaderAdmin({
             <h1 className="whitespace-nowrap text-base font-semibold tracking-tight">
               {title}
             </h1>
-            {lastUpdated && (
-              <span className="hidden rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground lg:inline">
-                Live · {lastUpdated}
-              </span>
-            )}
             {user?.role && (
               <Badge variant="secondary" className="rounded-md capitalize">
                 {user.role}
@@ -62,12 +54,6 @@ export function HeaderAdmin({
             </Button>
           )}
           {actions}
-          {showCreateEvent && (
-            <Button size="sm" onClick={() => navigate("/admin/events")}>
-              <Plus className="size-3.5" />
-              <span className="hidden sm:inline">Thêm sự kiện</span>
-            </Button>
-          )}
         </div>
       </div>
     </header>
@@ -75,18 +61,9 @@ export function HeaderAdmin({
 }
 
 export function AdminAuthGate({ children }: { children: ReactNode }) {
-  const { isAuthenticated } = useAuth();
-  if (!isAuthenticated) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-        <ShieldAlert className="size-10 text-primary" />
-        <h1 className="text-xl font-semibold">Cần đăng nhập Admin</h1>
-        <p className="max-w-sm text-sm text-muted-foreground">
-          Bấm <strong>Đăng nhập Admin</strong> ở sidebar để vào tài khoản vận
-          hành và dùng đầy đủ nghiệp vụ.
-        </p>
-      </div>
-    );
+  const { staffRole } = useAuth();
+  if (!staffRole) {
+    return <NotFoundPage />;
   }
   return <>{children}</>;
 }
@@ -106,11 +83,9 @@ type AdminPageShellProps = {
 export function AdminPageShell({
   title,
   description,
-  lastUpdated,
   loading,
   error,
   onRefresh,
-  showCreateEvent,
   actions,
   children,
 }: AdminPageShellProps) {
@@ -120,9 +95,7 @@ export function AdminPageShell({
         <HeaderAdmin
           title={title}
           description={description}
-          lastUpdated={lastUpdated}
           onRefresh={onRefresh}
-          showCreateEvent={showCreateEvent}
           actions={actions}
         />
         <main className="flex-1 space-y-6 p-6 sm:p-8">

@@ -30,10 +30,10 @@ function UpcomingSection() {
     setLoading(true);
 
     eventApi
-      .listEvents()
+      .listEvents({ status: "open" })
       .then((res) => {
-        if (isMounted && res.data?.events?.length > 0) {
-          const dbEvents: DisplayUpcomingEvent[] = res.data.events.map(
+        if (isMounted) {
+          const dbEvents: DisplayUpcomingEvent[] = (res.data?.events ?? []).map(
             (e: any) => ({
               id: e.id,
               title: e.title,
@@ -45,12 +45,11 @@ function UpcomingSection() {
               schedules: e.schedules || [],
               zones: e.zones || [],
               soldTickets: e.soldTickets || 0,
-              place: e.place, // Chứa { name, address, city }
+              place: e.place,
               passCount: e.passCount || 0,
               category: e.category || "V-Pop",
             }),
           );
-
           setEventsList(dbEvents);
         }
       })
@@ -76,7 +75,7 @@ function UpcomingSection() {
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
         {/* HEADER */}
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-xl font-bold text-white">Sự kiện sắp tới</h2>
+          <h2 className="text-xl font-bold text-white">Đang mở bán</h2>
           <Link
             to="/marketplace"
             className="inline-flex items-center gap-1.5 text-sm text-zinc-400 hover:text-white transition-colors"

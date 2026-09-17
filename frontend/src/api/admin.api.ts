@@ -71,6 +71,7 @@ export type AdminEvent = {
   title: string;
   description: string | null;
   organizerName?: string | null;
+  organizerId?: number | null;
   organizer?: string;
   bannerUrl: string | null;
   mapUrl?: string | null;
@@ -364,4 +365,72 @@ export const adminApi = {
 
   deleteEvent: (id: number) =>
     api<{ success: boolean }>(`/events/${id}`, { method: "DELETE" }),
+
+  rbacCatalog: () =>
+    api<{ success: boolean; data: RbacCatalog }>("/admin/rbac/catalog"),
+
+  assignRole: (payload: {
+    userId: number;
+    roleId: number;
+    scopeType: RbacScopeType;
+    scopeId?: number;
+  }) =>
+    api<{ success: boolean; data: { assignment: unknown } }>(
+      "/admin/roles/assign",
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+
+  revokeRole: (payload: {
+    userId: number;
+    roleId: number;
+    scopeType: RbacScopeType;
+    scopeId?: number;
+  }) =>
+    api<{ success: boolean; data: { revoked: boolean; id: number } }>(
+      "/admin/roles/revoke",
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+};
+
+export type RbacScopeType = "GLOBAL" | "ORGANIZER" | "EVENT";
+
+export type RbacCatalog = {
+  roles: Array<{
+    id: number;
+    name: string;
+    code: string;
+    label: string;
+    description: string | null;
+    assignable: boolean;
+    globalOnly: boolean;
+    eventOnly: boolean;
+  }>;
+  users: Array<{
+    id: number;
+    fullName: string;
+    email: string;
+    avatarUrl: string | null;
+    legacyRole: string | null;
+  }>;
+  events: Array<{
+    id: number;
+    title: string;
+    organizerId: number | null;
+    organizerName: string | null;
+    status: string | null;
+  }>;
+  organizers: Array<{ id: number; fullName: string; email: string }>;
+  assignments: Array<{
+    id: number;
+    userId: number;
+    roleId: number;
+    role: string;
+    roleLabel: string;
+    scopeType: RbacScopeType;
+    scopeId: number;
+    createdAt: string;
+    user: { id: number; fullName: string; email: string };
+    event: { id: number; title: string } | null;
+    organizer: { id: number; fullName: string; email: string } | null;
+  }>;
 };

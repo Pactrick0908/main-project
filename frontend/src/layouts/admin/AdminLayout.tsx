@@ -1,11 +1,27 @@
-import { Outlet, useLocation } from "react-router-dom";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
+import { organizerCanAccess } from "@/api/auth.api";
 import SidebarAdmin from "./SidebarAdmin";
+import NotFoundPage from "@/pages/NotFoundPage";
 
 function AdminLayout() {
   const location = useLocation();
-  const isScanner = location.pathname.startsWith("/admin/scanner");
+  const { staffRole } = useAuth();
+  const isScannerPage = location.pathname.startsWith("/admin/scanner");
 
-  if (isScanner) {
+  if (!staffRole) {
+    return <NotFoundPage />;
+  }
+
+  if (staffRole === "scanner" && !isScannerPage) {
+    return <Navigate to="/admin/scanner" replace />;
+  }
+
+  if (staffRole === "organizer" && !organizerCanAccess(location.pathname)) {
+    return <Navigate to="/admin" replace />;
+  }
+
+  if (isScannerPage) {
     return <Outlet />;
   }
 
