@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { ticketApi, type TicketDto } from "@/api/ticket.api";
 import { useAuth } from "@/context/AuthContext";
 import { Link } from "react-router-dom";
+import { toast } from "@/lib/toast";
 
 // Sub-components
 import SelectTicketStep from "./post-ticket/SelectTicketStep";
@@ -81,15 +82,15 @@ export default function PostTicketModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTicketId) {
-      alert("Vui lòng chọn vé bạn muốn đăng bán!");
+      toast.error("Vui lòng chọn vé bạn muốn đăng bán!");
       return;
     }
     if (!accountNumber.trim()) {
-      alert("Vui lòng điền số tài khoản nhận tiền!");
+      toast.error("Vui lòng điền số tài khoản nhận tiền!");
       return;
     }
     if (!accountName.trim()) {
-      alert("Vui lòng điền tên chủ tài khoản nhận tiền!");
+      toast.error("Vui lòng điền tên chủ tài khoản nhận tiền!");
       return;
     }
 

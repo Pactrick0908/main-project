@@ -105,7 +105,8 @@ model Artist {
   name      String   @db.VarChar(150)
   stageName String?  @map("stage_name") @db.VarChar(150)
   bio       String?
-  avatarUrl String?  @map("avatar_url") @db.VarChar(500)
+  /** URL hoặc data URL ảnh đại diện */
+  avatarUrl String?  @map("avatar_url") @db.Text
   genre     String?  @db.VarChar(100)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
 

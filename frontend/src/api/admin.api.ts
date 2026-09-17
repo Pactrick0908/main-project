@@ -4,6 +4,17 @@ import type { TicketDto } from "./ticket.api";
 const API_BASE =
   import.meta.env.VITE_API_URL ?? "/api/v1";
 
+export type AdminArtist = {
+  id: number;
+  name: string;
+  stageName: string | null;
+  bio: string | null;
+  avatarUrl: string | null;
+  genre: string | null;
+  createdAt?: string;
+  eventCount?: number;
+};
+
 export type AdminOrganizer = {
   id: number;
   fullName: string;
@@ -77,6 +88,15 @@ export type AdminEvent = {
   zones: AdminEventZone[];
   soldTickets: number;
   editPolicy?: AdminEventEditPolicy;
+  artists?: Array<{
+    id: number;
+    name: string;
+    stageName: string | null;
+    avatarUrl: string | null;
+    genre: string | null;
+    role?: string;
+  }>;
+  artist?: string;
 };
 
 export type DashboardStats = {
@@ -109,7 +129,9 @@ async function api<T>(
   options: RequestInit = {},
 ): Promise<T> {
   const headers = new Headers(options.headers);
-  headers.set("Content-Type", "application/json");
+  if (!(options.body instanceof FormData)) {
+    headers.set("Content-Type", "application/json");
+  }
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
@@ -125,6 +147,26 @@ async function api<T>(
 }
 
 export const adminApi = {
+  uploadImage: (
+    file: File,
+    folder: "artists" | "organizers" | "events" | "maps" | "misc" = "misc",
+  ) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("folder", folder);
+    return api<{
+      success: boolean;
+      data: {
+        url: string;
+        publicId: string;
+        width?: number;
+        height?: number;
+        format?: string;
+        bytes?: number;
+      };
+    }>("/admin/upload", { method: "POST", body: form });
+  },
+
   dashboard: () =>
     api<{ success: boolean; data: DashboardStats }>("/admin/dashboard"),
 
@@ -237,6 +279,43 @@ export const adminApi = {
       { method: "DELETE" },
     ),
 
+  listArtists: (q?: string) =>
+    api<{ success: boolean; data: { artists: AdminArtist[] } }>(
+      `/admin/artists${q ? `?q=${encodeURIComponent(q)}` : ""}`,
+    ),
+
+  createArtist: (payload: {
+    name: string;
+    stageName?: string;
+    bio?: string;
+    avatarUrl?: string;
+    genre?: string;
+  }) =>
+    api<{ success: boolean; data: { artist: AdminArtist } }>(
+      "/admin/artists",
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+
+  updateArtist: (
+    id: number,
+    payload: {
+      name?: string;
+      stageName?: string;
+      bio?: string;
+      avatarUrl?: string | null;
+      genre?: string;
+    },
+  ) =>
+    api<{ success: boolean; data: { artist: AdminArtist } }>(
+      `/admin/artists/${id}`,
+      { method: "PATCH", body: JSON.stringify(payload) },
+    ),
+
+  deleteArtist: (id: number) =>
+    api<{ success: boolean; data: { id: number } }>(`/admin/artists/${id}`, {
+      method: "DELETE",
+    }),
+
   createEvent: (payload: {
     title: string;
     description?: string;
@@ -250,6 +329,7 @@ export const adminApi = {
     place?: { name: string; address: string; city: string };
     startTime?: string;
     endTime?: string;
+    artistIds?: number[];
     zones: Array<{
       zoneId?: number;
       name: string;

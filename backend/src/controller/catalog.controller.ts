@@ -151,3 +151,80 @@ export const deleteOrganizer = async (req: Request, res: Response) => {
     });
   }
 };
+
+export const listArtists = async (req: Request, res: Response) => {
+  try {
+    const q = typeof req.query.q === "string" ? req.query.q : undefined;
+    const artists = await CatalogService.listArtists(q);
+    return res.json({ success: true, data: { artists } });
+  } catch (error: any) {
+    console.error("listArtists:", error);
+    return res.status(500).json({
+      success: false,
+      message: error?.message ?? "Lỗi tải nghệ sĩ",
+    });
+  }
+};
+
+export const createArtist = async (req: Request, res: Response) => {
+  try {
+    const artist = await CatalogService.createArtist(req.body ?? {});
+    return res.status(201).json({
+      success: true,
+      message: "Đã tạo nghệ sĩ",
+      data: { artist },
+    });
+  } catch (error: any) {
+    console.error("createArtist:", error);
+    return res.status(error?.status ?? 500).json({
+      success: false,
+      message: error?.message ?? "Lỗi tạo nghệ sĩ",
+    });
+  }
+};
+
+export const updateArtist = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) {
+      return res
+        .status(400)
+        .json({ success: false, message: "ID không hợp lệ" });
+    }
+    const artist = await CatalogService.updateArtist(id, req.body ?? {});
+    return res.json({
+      success: true,
+      message: "Đã cập nhật nghệ sĩ",
+      data: { artist },
+    });
+  } catch (error: any) {
+    console.error("updateArtist:", error);
+    return res.status(error?.status ?? 500).json({
+      success: false,
+      message: error?.message ?? "Lỗi cập nhật nghệ sĩ",
+    });
+  }
+};
+
+export const deleteArtist = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) {
+      return res
+        .status(400)
+        .json({ success: false, message: "ID không hợp lệ" });
+    }
+    const result = await CatalogService.deleteArtist(id);
+    return res.json({
+      success: true,
+      message: "Đã xóa nghệ sĩ",
+      data: result,
+    });
+  } catch (error: any) {
+    console.error("deleteArtist:", error);
+    return res.status(error?.status ?? 500).json({
+      success: false,
+      message: error?.message ?? "Lỗi xóa nghệ sĩ",
+    });
+  }
+};

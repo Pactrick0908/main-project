@@ -18,6 +18,7 @@ import {
   AdminPageShell,
   AdminConfirmModal,
 } from "@/layouts/admin/HeaderAdmin";
+import { toast } from "@/lib/toast";
 
 type ZoneDraft = {
   key: string;
@@ -46,7 +47,6 @@ export default function PlacePage() {
   const [form, setForm] = useState(emptyPlace);
   const [zoneDrafts, setZoneDrafts] = useState<ZoneDraft[]>(defaultZones);
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
   const [modal, setModal] = useState<ConfirmModalState | null>(null);
 
   const refresh = useCallback(async () => {
@@ -98,15 +98,13 @@ export default function PlacePage() {
           }))
         : defaultZones(),
     );
-    setMsg(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setMsg(null);
     if (!form.name.trim()) {
-      setMsg("Nhập tên địa điểm");
+      toast.error("Nhập tên địa điểm");
       return;
     }
     const zones = zoneDrafts
@@ -117,12 +115,12 @@ export default function PlacePage() {
       }))
       .filter((z) => z.name);
     if (!zones.length) {
-      setMsg("Cần ít nhất 1 khu vực (zone)");
+      toast.error("Cần ít nhất 1 khu vực (zone)");
       return;
     }
     const names = zones.map((z) => z.name.toLowerCase());
     if (new Set(names).size !== names.length) {
-      setMsg("Tên khu vực không được trùng");
+      toast.error("Tên khu vực không được trùng");
       return;
     }
 
@@ -136,15 +134,15 @@ export default function PlacePage() {
       };
       if (editingId != null) {
         await adminApi.updatePlace(editingId, payload);
-        setMsg(`Đã cập nhật địa điểm #${editingId}`);
+        toast.success(`Đã cập nhật địa điểm #${editingId}`);
       } else {
         await adminApi.createPlace(payload);
-        setMsg("Đã tạo địa điểm");
+        toast.success("Đã tạo địa điểm");
       }
       resetForm();
       await refresh();
     } catch (err) {
-      setMsg(
+      toast.error(
         err instanceof Error
           ? err.message
           : editingId != null
@@ -175,7 +173,7 @@ export default function PlacePage() {
       onConfirm: async () => {
         await adminApi.deletePlace(place.id);
         if (editingId === place.id) resetForm();
-        setMsg(`Đã xóa địa điểm #${place.id}`);
+        toast.success(`Đã xóa địa điểm #${place.id}`);
         setModal(null);
         await refresh();
       },
@@ -214,7 +212,6 @@ export default function PlacePage() {
                   size="sm"
                   onClick={() => {
                     resetForm();
-                    setMsg(null);
                   }}
                 >
                   <X className="size-3.5" />
@@ -228,9 +225,6 @@ export default function PlacePage() {
               onSubmit={(e) => void handleSubmit(e)}
               className="space-y-4"
             >
-              {msg && (
-                <p className="text-sm text-muted-foreground">{msg}</p>
-              )}
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-1.5 md:col-span-2">
                   <label className="text-xs font-medium text-muted-foreground">
@@ -406,7 +400,6 @@ export default function PlacePage() {
                     variant="outline"
                     onClick={() => {
                       resetForm();
-                      setMsg(null);
                     }}
                   >
                     Hủy

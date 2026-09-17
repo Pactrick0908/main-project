@@ -18,11 +18,28 @@ export interface EventZoneDto extends EventZone {
 
 export interface EventDto extends DetailedEvent {
   status?: string;
+  bannerUrl?: string | null;
   minPrice?: number;
   maxPrice?: number;
   priceRange?: string;
   passCount?: number;
+  soldTickets?: number;
+  schedules?: Array<{
+    id: number;
+    startTime: string;
+    endTime: string;
+    status?: string | null;
+  }>;
+  place?: { id?: number; name: string; address?: string; city: string };
   zones: EventZoneDto[];
+  artists?: Array<{
+    id: number;
+    name: string;
+    stageName?: string | null;
+    avatarUrl?: string | null;
+    genre?: string | null;
+    role?: string;
+  }>;
   organizerInfo?: {
     id: number;
     fullName: string;
@@ -56,6 +73,31 @@ async function api<T>(
 }
 
 export const eventApi = {
+  /**
+   * Tìm concert / nghệ sĩ (+ từ khóa nổi bật, sự kiện sắp diễn ra)
+   */
+  search: async (q?: string) => {
+    const qs = q?.trim()
+      ? `?q=${encodeURIComponent(q.trim())}`
+      : "";
+    return api<{
+      success: boolean;
+      data: {
+        query: string;
+        events: EventDto[];
+        artists: Array<{
+          id: number;
+          name: string;
+          stageName: string | null;
+          avatarUrl: string | null;
+          eventCount: number;
+        }>;
+        hotKeywords: string[];
+        upcoming: EventDto[];
+      };
+    }>(`/events/search${qs}`, {}, false);
+  },
+
   /**
    * Lấy danh sách sự kiện từ backend DB
    */

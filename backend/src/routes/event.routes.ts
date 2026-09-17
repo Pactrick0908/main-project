@@ -5,6 +5,7 @@ import {
   getEvent,
   listEvents,
   listPlaces,
+  searchCatalog,
   updateEvent,
 } from "../controller/event.controller.js";
 import { requireAdmin } from "../middleware/auth.middleware.js";
@@ -12,6 +13,7 @@ import { requireAdmin } from "../middleware/auth.middleware.js";
 const router = Router();
 
 router.get("/", listEvents);
+router.get("/search", searchCatalog);
 router.get("/places", requireAdmin, listPlaces);
 router.get("/:id", getEvent);
 router.post("/", requireAdmin, createEvent);

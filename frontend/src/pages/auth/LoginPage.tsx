@@ -4,6 +4,7 @@ import { Ticket, Zap, ShieldCheck, ArrowLeft, Loader2 } from "lucide-react";
 import GoogleLoginButton from "@/pages/auth/GoogleLoginButton";
 import { authApi } from "@/api/auth.api";
 import { useAuth } from "@/context/AuthContext";
+import { toast } from "@/lib/toast";
 
 const FEATURES = [
   {
@@ -32,7 +33,7 @@ function LoginPage() {
       login(session.user, session.token);
       navigate("/", { replace: true });
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Đăng nhập demo thất bại");
+      toast.error(err instanceof Error ? err.message : "Đăng nhập demo thất bại");
     } finally {
       setDemoBusy(false);
     }

@@ -79,7 +79,6 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction) {
     const payload = jwt.verify(header.slice(7), JWT_SECRET) as AuthUser;
     req.auth = payload;
     if (payload.role === "admin") return next();
-    if (process.env.NODE_ENV !== "production") return next();
     return res.status(403).json({ success: false, message: "Cần quyền admin" });
   } catch {
     return res

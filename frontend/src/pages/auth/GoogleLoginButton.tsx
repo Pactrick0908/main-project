@@ -6,6 +6,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { authApi, saveSession } from "@/api/auth.api";
 import { useAuth } from "@/context/AuthContext";
+import { toast } from "@/lib/toast";
 
 const CLIENT_ID = import.meta.env.VITE_CLIENT_ID as string | undefined;
 
@@ -24,12 +25,12 @@ export default function GoogleLoginButton() {
       navigate("/", { replace: true });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Đăng nhập thất bại";
-      alert(msg);
+      toast.error(msg);
     }
   };
 
   const handleError = () => {
-    alert("Google đăng nhập thất bại. Vui lòng thử lại.");
+    toast.error("Google đăng nhập thất bại. Vui lòng thử lại.");
   };
 
   if (!CLIENT_ID) {

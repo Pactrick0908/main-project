@@ -14,6 +14,7 @@ import { adminApi, type AdminEvent } from "@/api/admin.api";
 import { useAuth } from "@/context/AuthContext";
 import { formatVND } from "@/pages/admin/adminShared";
 import { AdminPageShell } from "@/layouts/admin/HeaderAdmin";
+import { toast } from "@/lib/toast";
 
 export default function AirdropPage() {
   const { isAuthenticated } = useAuth();
@@ -65,7 +66,7 @@ export default function AirdropPage() {
     e.preventDefault();
     if (!airdrop.eventId || !airdrop.eventZoneId) return;
     if (!airdrop.email && !airdrop.walletAddress) {
-      alert("Nhập email hoặc địa chỉ ví người nhận");
+      toast.error("Nhập email hoặc địa chỉ ví người nhận");
       return;
     }
     setAirdropBusy(true);
@@ -76,12 +77,12 @@ export default function AirdropPage() {
         email: airdrop.email || undefined,
         walletAddress: airdrop.walletAddress || undefined,
       });
-      alert(`Đã cấp vé #${res.data.ticket.id}`);
+      toast.success(`Đã cấp vé #${res.data.ticket.id}`);
       setAirdrop((s) => ({ ...s, email: "", walletAddress: "" }));
       await refresh();
       navigate("/admin/tickets");
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Cấp vé thất bại");
+      toast.error(err instanceof Error ? err.message : "Cấp vé thất bại");
     } finally {
       setAirdropBusy(false);
     }

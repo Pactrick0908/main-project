@@ -9,13 +9,22 @@ import {
 import {
   createOrganizer,
   createPlace,
+  createArtist,
+  deleteArtist,
   deleteOrganizer,
   deletePlace,
+  listArtists,
   listOrganizers,
   listPlacesAdmin,
+  updateArtist,
   updateOrganizer,
   updatePlace,
 } from "../controller/catalog.controller.js";
+import {
+  handleUploadError,
+  uploadImage,
+  uploadImageMiddleware,
+} from "../controller/upload.controller.js";
 import { requireAdmin } from "../middleware/auth.middleware.js";
 
 const router = Router();
@@ -36,5 +45,17 @@ router.get("/organizers", listOrganizers);
 router.post("/organizers", createOrganizer);
 router.patch("/organizers/:id", updateOrganizer);
 router.delete("/organizers/:id", deleteOrganizer);
+
+router.get("/artists", listArtists);
+router.post("/artists", createArtist);
+router.patch("/artists/:id", updateArtist);
+router.delete("/artists/:id", deleteArtist);
+
+router.post(
+  "/upload",
+  uploadImageMiddleware,
+  handleUploadError,
+  uploadImage,
+);
 
 export default router;

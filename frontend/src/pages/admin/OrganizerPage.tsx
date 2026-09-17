@@ -18,6 +18,8 @@ import {
   AdminPageShell,
   AdminConfirmModal,
 } from "@/layouts/admin/HeaderAdmin";
+import { ImageUpload } from "@/components/ui/image-upload";
+import { toast } from "@/lib/toast";
 
 const emptyForm = { fullName: "", email: "", avatarUrl: "" };
 
@@ -32,7 +34,6 @@ export default function OrganizerPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
   const [modal, setModal] = useState<ConfirmModalState | null>(null);
 
   const refresh = useCallback(async () => {
@@ -73,15 +74,13 @@ export default function OrganizerPage() {
       email: o.email,
       avatarUrl: o.avatarUrl ?? "",
     });
-    setMsg(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setMsg(null);
     if (!form.fullName.trim() || !form.email.trim()) {
-      setMsg("Nhập tên và email nhà cung cấp");
+      toast.error("Nhập tên và email nhà cung cấp");
       return;
     }
     setBusy(true);
@@ -93,15 +92,15 @@ export default function OrganizerPage() {
       };
       if (editingId != null) {
         await adminApi.updateOrganizer(editingId, payload);
-        setMsg(`Đã cập nhật nhà cung cấp #${editingId}`);
+        toast.success(`Đã cập nhật nhà cung cấp #${editingId}`);
       } else {
         await adminApi.createOrganizer(payload);
-        setMsg("Đã tạo nhà cung cấp");
+        toast.success("Đã tạo nhà cung cấp");
       }
       resetForm();
       await refresh();
     } catch (err) {
-      setMsg(
+      toast.error(
         err instanceof Error
           ? err.message
           : editingId != null
@@ -131,7 +130,7 @@ export default function OrganizerPage() {
       onConfirm: async () => {
         await adminApi.deleteOrganizer(o.id);
         if (editingId === o.id) resetForm();
-        setMsg(`Đã xóa nhà cung cấp #${o.id}`);
+        toast.success(`Đã xóa nhà cung cấp #${o.id}`);
         setModal(null);
         await refresh();
       },
@@ -170,7 +169,6 @@ export default function OrganizerPage() {
                   size="sm"
                   onClick={() => {
                     resetForm();
-                    setMsg(null);
                   }}
                 >
                   <X className="size-3.5" />
@@ -184,9 +182,6 @@ export default function OrganizerPage() {
               onSubmit={(e) => void handleSubmit(e)}
               className="space-y-4"
             >
-              {msg && (
-                <p className="text-sm text-muted-foreground">{msg}</p>
-              )}
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-muted-foreground">
@@ -217,14 +212,19 @@ export default function OrganizerPage() {
                 </div>
                 <div className="space-y-1.5 md:col-span-2">
                   <label className="text-xs font-medium text-muted-foreground">
-                    URL logo
+                    Logo nhà cung cấp
                   </label>
-                  <Input
+                  <ImageUpload
+                    folder="organizers"
+                    variant="square"
+                    label="Upload logo Cloudinary"
                     value={form.avatarUrl}
-                    onChange={(e) =>
-                      setForm({ ...form, avatarUrl: e.target.value })
+                    onChange={(url) =>
+                      setForm((f) => ({ ...f, avatarUrl: url }))
                     }
-                    placeholder="https://example.com/logo.png"
+                    onClear={() =>
+                      setForm((f) => ({ ...f, avatarUrl: "" }))
+                    }
                   />
                 </div>
               </div>
@@ -235,7 +235,6 @@ export default function OrganizerPage() {
                     variant="outline"
                     onClick={() => {
                       resetForm();
-                      setMsg(null);
                     }}
                   >
                     Hủy

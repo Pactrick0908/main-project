@@ -15,6 +15,7 @@ import { useAuth } from "@/context/AuthContext";
 import { cn } from "cn";
 import { formatVND } from "@/pages/admin/adminShared";
 import { AdminPageShell } from "@/layouts/admin/HeaderAdmin";
+import { toast } from "@/lib/toast";
 
 export default function TicketPage() {
   const { isAuthenticated } = useAuth();
@@ -52,9 +53,10 @@ export default function TicketPage() {
   const handleCheckIn = async (ticketId: number) => {
     try {
       await adminApi.checkIn(ticketId);
+      toast.success(`Đã check-in vé #${ticketId}`);
       await refresh();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Check-in thất bại");
+      toast.error(err instanceof Error ? err.message : "Check-in thất bại");
     }
   };
 
@@ -63,9 +65,10 @@ export default function TicketPage() {
     if (reason === null) return;
     try {
       await adminApi.revoke(ticketId, reason || "admin");
+      toast.success(`Đã khóa vé #${ticketId}`);
       await refresh();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Khóa vé thất bại");
+      toast.error(err instanceof Error ? err.message : "Khóa vé thất bại");
     }
   };
 

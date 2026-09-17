@@ -11,47 +11,35 @@ import {
 } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/context/AuthContext";
+import HeaderSearch from "@/components/layout/client/HeaderSearch";
 import {
   Ticket,
-  Search,
   Menu,
   LogOut,
   ChevronDown,
-  Check,
-  Copy,
   PlusCircle,
   Home,
   Calendar,
   ShoppingBag,
 } from "lucide-react";
 
-// ─────────────────────────────────────────────
-// TYPES
-// ─────────────────────────────────────────────
 interface NavLink {
   name: string;
   href: string;
   icon: React.ReactNode;
 }
 
-// ─────────────────────────────────────────────
-// HEADER
-// ─────────────────────────────────────────────
 export default function Header() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [copied, setCopied] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
 
-  // Close dropdown on route change
   useEffect(() => {
     setDropdownOpen(false);
   }, [location.pathname]);
 
-  // Click outside closes dropdown
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (
@@ -99,14 +87,6 @@ export default function Header() {
     }
   };
 
-  const copyWallet = () => {
-    if (user?.walletAddress) {
-      navigator.clipboard.writeText(user.walletAddress);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
   const userInitials = user?.name
     ? user.name
         .split(" ")
@@ -119,7 +99,6 @@ export default function Header() {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-zinc-800/70 bg-[#090A0F]/95 backdrop-blur-md">
       <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4 sm:px-6 lg:px-8">
-        {/* ── LEFT: LOGO ─────────────────────── */}
         <Link to="/" className="flex shrink-0 items-center gap-2.5 group">
           <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-700/80 bg-zinc-900 text-[#F97316] transition-colors group-hover:border-[#F97316]/40">
             <Ticket className="h-3.5 w-3.5 -rotate-12" />
@@ -133,7 +112,6 @@ export default function Header() {
           </span>
         </Link>
 
-        {/* ── CENTER: NAV LINKS (desktop) ───── */}
         <nav className="hidden md:flex items-center gap-0.5 text-[13px] ml-2">
           {navLinks.map((link) => {
             const active = isActive(link.href);
@@ -154,25 +132,10 @@ export default function Header() {
           })}
         </nav>
 
-        {/* ── CENTER-RIGHT: SEARCH ───────────── */}
-        <div className="relative hidden lg:flex flex-1 max-w-72 xl:max-w-80 mx-auto">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500" />
-          <input
-            type="text"
-            placeholder="Tìm sự kiện / nghệ sĩ..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-8 w-full rounded-lg border border-zinc-800 bg-zinc-900/50 pl-8 pr-10 text-xs text-zinc-200 placeholder:text-zinc-500 focus:border-zinc-700 focus:outline-none focus:bg-zinc-900 transition-colors"
-          />
-          <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-zinc-800 bg-zinc-950 px-1 text-[9px] font-mono text-zinc-500">
-            ⌘K
-          </kbd>
-        </div>
+        <HeaderSearch className="hidden lg:flex flex-1 max-w-72 xl:max-w-80 mx-auto" />
 
-        {/* ── RIGHT: AUTH AREA ───────────────── */}
         <div className="ml-auto hidden sm:flex items-center gap-2.5 shrink-0">
           {user ? (
-            /* LOGGED IN → AVATAR DROPDOWN */
             <div className="relative" ref={dropdownRef}>
               <button
                 onClick={() => setDropdownOpen(!dropdownOpen)}
@@ -192,10 +155,8 @@ export default function Header() {
                 />
               </button>
 
-              {/* DROPDOWN PANEL */}
               {dropdownOpen && (
                 <div className="absolute right-0 top-full mt-2 w-64 overflow-hidden rounded-xl border border-zinc-800 bg-[#0E0F16] shadow-2xl">
-                  {/* USER INFO */}
                   <div className="flex items-center gap-3 px-3 py-3">
                     <Avatar size="default">
                       <AvatarImage src={user.avatar} alt={user.name} />
@@ -213,7 +174,6 @@ export default function Header() {
                     </div>
                   </div>
 
-                  {/* USER STATUS CHIP */}
                   <div className="mx-3 mb-2 flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/60 px-2.5 py-1.5">
                     <div className="flex items-center gap-1.5 text-[11px] text-zinc-300 font-medium">
                       <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
@@ -223,7 +183,6 @@ export default function Header() {
 
                   <Separator className="bg-zinc-800/80" />
 
-                  {/* MENU ITEMS */}
                   <div className="p-1.5">
                     <Link
                       to="/my-tickets"
@@ -234,9 +193,6 @@ export default function Header() {
                         <Ticket className="h-3.5 w-3.5 text-[#F97316]" />
                         Vé của tôi
                       </div>
-                      <span className="rounded border border-zinc-700/60 bg-zinc-800/60 px-1.5 py-0.5 font-mono text-[9px] text-zinc-400">
-                        2 vé
-                      </span>
                     </Link>
 
                     <Link
@@ -267,7 +223,6 @@ export default function Header() {
               )}
             </div>
           ) : (
-            /* NOT LOGGED IN → ĐĂNG NHẬP BUTTON */
             <Link to="/login">
               <Button
                 size="sm"
@@ -279,7 +234,6 @@ export default function Header() {
           )}
         </div>
 
-        {/* ── MOBILE: SHEET MENU ─────────────── */}
         <div className="ml-auto flex items-center gap-2 md:hidden">
           {!user && (
             <Link to="/login">
@@ -308,19 +262,10 @@ export default function Header() {
                 </SheetTitle>
               </SheetHeader>
 
-              {/* MOBILE SEARCH */}
               <div className="px-4 py-3 border-b border-zinc-800">
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500" />
-                  <input
-                    type="text"
-                    placeholder="Tìm sự kiện / nghệ sĩ..."
-                    className="h-8 w-full rounded-lg border border-zinc-800 bg-zinc-900/60 pl-8 pr-3 text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-none"
-                  />
-                </div>
+                <HeaderSearch variant="mobile" className="w-full" />
               </div>
 
-              {/* NAV LINKS */}
               <nav className="flex flex-col gap-0.5 p-2">
                 {navLinks.map((link) => (
                   <Link
@@ -335,7 +280,6 @@ export default function Header() {
                 ))}
               </nav>
 
-              {/* USER SECTION ON MOBILE */}
               {user && (
                 <>
                   <Separator className="bg-zinc-800 mx-0" />
@@ -351,24 +295,15 @@ export default function Header() {
                         <div className="truncate text-xs font-semibold text-white">
                           {user.name}
                         </div>
-                        <div className="flex items-center gap-1 font-mono text-[10px] text-zinc-500">
-                          <span className="h-1 w-1 rounded-full bg-emerald-400"></span>
-                          {user.walletAddress || "8xG7...91eF"}
-                        </div>
                       </div>
                     </div>
 
                     <Link
                       to="/my-tickets"
-                      className="flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium text-zinc-300 hover:bg-zinc-800/70 hover:text-white transition-colors"
+                      className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-zinc-300 hover:bg-zinc-800/70 hover:text-white transition-colors"
                     >
-                      <div className="flex items-center gap-3">
-                        <Ticket className="h-4 w-4 text-[#F97316]" />
-                        Vé của tôi
-                      </div>
-                      <span className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 font-mono text-[9px] text-zinc-400">
-                        2 vé
-                      </span>
+                      <Ticket className="h-4 w-4 text-[#F97316]" />
+                      Vé của tôi
                     </Link>
 
                     <Link

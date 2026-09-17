@@ -12,6 +12,20 @@ export const listEvents = async (_req: Request, res: Response) => {
   }
 };
 
+export const searchCatalog = async (req: Request, res: Response) => {
+  try {
+    const q = typeof req.query.q === "string" ? req.query.q : undefined;
+    const data = await EventService.search(q);
+    return res.json({ success: true, data });
+  } catch (error) {
+    console.error("searchCatalog:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi tìm kiếm",
+    });
+  }
+};
+
 export const getEvent = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);

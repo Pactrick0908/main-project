@@ -468,4 +468,140 @@ export class CatalogService {
       role: user.role?.name ?? null,
     };
   }
+
+  // ── Artists ──────────────────────────────────────────────────────────
+
+  static serializeArtist(a: {
+    id: number;
+    name: string;
+    stageName: string | null;
+    bio: string | null;
+    avatarUrl: string | null;
+    genre: string | null;
+    createdAt: Date;
+    _count?: { eventArtists: number };
+  }) {
+    return {
+      id: a.id,
+      name: a.name,
+      stageName: a.stageName,
+      bio: a.bio,
+      avatarUrl: a.avatarUrl,
+      genre: a.genre,
+      createdAt: a.createdAt,
+      eventCount: a._count?.eventArtists ?? 0,
+    };
+  }
+
+  static async listArtists(q?: string) {
+    const search = q?.trim();
+    const artists = await prisma.artist.findMany({
+      where: search
+        ? {
+            OR: [
+              { name: { contains: search, mode: "insensitive" } },
+              { stageName: { contains: search, mode: "insensitive" } },
+            ],
+          }
+        : undefined,
+      include: { _count: { select: { eventArtists: true } } },
+      orderBy: { id: "desc" },
+      take: 200,
+    });
+    return artists.map((a) => this.serializeArtist(a));
+  }
+
+  static async getArtistById(id: number) {
+    const a = await prisma.artist.findUnique({
+      where: { id },
+      include: { _count: { select: { eventArtists: true } } },
+    });
+    if (!a) return null;
+    return this.serializeArtist(a);
+  }
+
+  static async createArtist(input: {
+    name: string;
+    stageName?: string;
+    bio?: string;
+    avatarUrl?: string;
+    genre?: string;
+  }) {
+    const name = input.name?.trim();
+    if (!name) {
+      throw Object.assign(new Error("Thiếu tên nghệ sĩ"), { status: 400 });
+    }
+    const created = await prisma.artist.create({
+      data: {
+        name,
+        stageName: input.stageName?.trim() || null,
+        bio: input.bio?.trim() || null,
+        avatarUrl: input.avatarUrl?.trim() || null,
+        genre: input.genre?.trim() || null,
+      },
+      include: { _count: { select: { eventArtists: true } } },
+    });
+    return this.serializeArtist(created);
+  }
+
+  static async updateArtist(
+    id: number,
+    input: {
+      name?: string;
+      stageName?: string;
+      bio?: string;
+      avatarUrl?: string | null;
+      genre?: string;
+    },
+  ) {
+    const existing = await prisma.artist.findUnique({ where: { id } });
+    if (!existing) {
+      throw Object.assign(new Error("Không tìm thấy nghệ sĩ"), { status: 404 });
+    }
+    if (input.name !== undefined && !input.name.trim()) {
+      throw Object.assign(new Error("Tên nghệ sĩ không được trống"), {
+        status: 400,
+      });
+    }
+    const updated = await prisma.artist.update({
+      where: { id },
+      data: {
+        ...(input.name != null ? { name: input.name.trim() } : {}),
+        ...(input.stageName !== undefined
+          ? { stageName: input.stageName?.trim() || null }
+          : {}),
+        ...(input.bio !== undefined
+          ? { bio: input.bio?.trim() || null }
+          : {}),
+        ...(input.avatarUrl !== undefined
+          ? { avatarUrl: input.avatarUrl?.trim() || null }
+          : {}),
+        ...(input.genre !== undefined
+          ? { genre: input.genre?.trim() || null }
+          : {}),
+      },
+      include: { _count: { select: { eventArtists: true } } },
+    });
+    return this.serializeArtist(updated);
+  }
+
+  static async deleteArtist(id: number) {
+    const existing = await prisma.artist.findUnique({
+      where: { id },
+      include: { _count: { select: { eventArtists: true } } },
+    });
+    if (!existing) {
+      throw Object.assign(new Error("Không tìm thấy nghệ sĩ"), { status: 404 });
+    }
+    if (existing._count.eventArtists > 0) {
+      throw Object.assign(
+        new Error(
+          `Không xóa được — nghệ sĩ đang gắn ${existing._count.eventArtists} sự kiện.`,
+        ),
+        { status: 409 },
+      );
+    }
+    await prisma.artist.delete({ where: { id } });
+    return { id };
+  }
 }

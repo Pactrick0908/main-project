@@ -1,7 +1,18 @@
 import { useState, useMemo, useEffect } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, ShieldCheck, Zap, Users, ArrowRight } from "lucide-react";
-import { EVENTS_DATA, type DetailedEvent } from "@/data/events.data";
+import {
+  ArrowLeft,
+  ShieldCheck,
+  Zap,
+  Users,
+  ArrowRight,
+  Mic2,
+} from "lucide-react";
+import {
+  EVENTS_DATA,
+  type DetailedEvent,
+  type EventArtist,
+} from "@/data/events.data";
 import { getResaleTicketsByEventId } from "@/pages/client/market/marketplace.data";
 import { useAuth } from "@/context/AuthContext";
 import { ticketApi } from "@/api/ticket.api";
@@ -14,6 +25,7 @@ import SeatSelectionBoard, {
 } from "./SeatSelectionBoard";
 import StadiumOverviewMap from "./StadiumOverviewMap";
 import ZoneTicketSelector from "./ZoneTicketSelector";
+import { toast } from "@/lib/toast";
 
 export default function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -81,6 +93,26 @@ export default function EventDetailPage() {
               fallback.organizer,
             logoUrl: dbEvent.logoUrl || undefined,
             mapUrl: dbEvent.mapUrl || undefined,
+            artist:
+              dbEvent.artist ||
+              (Array.isArray(dbEvent.artists) && dbEvent.artists.length
+                ? dbEvent.artists
+                    .map(
+                      (a: EventArtist) =>
+                        a.stageName?.trim() || a.name,
+                    )
+                    .join(", ")
+                : fallback.artist),
+            artists: Array.isArray(dbEvent.artists)
+              ? dbEvent.artists.map((a: any) => ({
+                  id: Number(a.id),
+                  name: a.name,
+                  stageName: a.stageName ?? null,
+                  avatarUrl: a.avatarUrl ?? null,
+                  genre: a.genre ?? null,
+                  role: a.role ?? "performer",
+                }))
+              : fallback.artists,
             zones: (dbEvent.zones || []).map((z: any, idx: number) => ({
               id: String(z.eventZoneId ?? z.id),
               name: z.name,
@@ -327,7 +359,7 @@ export default function EventDetailPage() {
   // Xử lý tạo đơn hàng VietQR
   const handleBuyTicket = async () => {
     if (totalTickets === 0) {
-      alert("Vui lòng chọn ít nhất 1 vé để tiếp tục!");
+      toast.error("Vui lòng chọn ít nhất 1 vé để tiếp tục!");
       return;
     }
 
@@ -344,7 +376,9 @@ export default function EventDetailPage() {
 
     const eventIdNum = Number(event.id);
     if (!Number.isInteger(eventIdNum) || eventIdNum < 1) {
-      alert("Sự kiện này chưa có trên hệ thống. Hãy chọn sự kiện từ trang chủ.");
+      toast.error(
+        "Sự kiện này chưa có trên hệ thống. Hãy chọn sự kiện từ trang chủ.",
+      );
       return;
     }
 
@@ -387,7 +421,7 @@ export default function EventDetailPage() {
       .filter((x): x is NonNullable<typeof x> => x != null);
 
     if (!itemsFinal.length) {
-      alert("Vui lòng chọn ít nhất 1 vé!");
+      toast.error("Vui lòng chọn ít nhất 1 vé!");
       return;
     }
 
@@ -405,7 +439,9 @@ export default function EventDetailPage() {
         startPolling(res.data.orderCode);
       }
     } catch (err: any) {
-      alert(err instanceof Error ? err.message : "Không tạo được đơn thanh toán");
+      toast.error(
+        err instanceof Error ? err.message : "Không tạo được đơn thanh toán",
+      );
     } finally {
       setIsProcessing(false);
     }
@@ -467,7 +503,7 @@ export default function EventDetailPage() {
       setQrModal(false);
       showPurchaseSuccess();
     } catch (e) {
-      alert(
+      toast.error(
         e instanceof Error
           ? e.message
           : "Giả lập thanh toán thất bại — kiểm tra backend",
@@ -526,6 +562,57 @@ export default function EventDetailPage() {
             <span>Xem danh sách người pass vé</span>
             <ArrowRight className="h-3.5 w-3.5" />
           </Link>
+        </div>
+      )}
+
+      {/* ── NGHỆ SĨ THAM GIA ─────────────────────────────────────────── */}
+      {(event.artists?.length ?? 0) > 0 && (
+        <div className="max-w-7xl mx-auto mb-6">
+          <div className="rounded-2xl border border-zinc-800 bg-[#12131A] p-4 sm:p-5">
+            <div className="mb-3 flex items-center gap-2">
+              <Mic2 className="h-4 w-4 text-[#F97316]" />
+              <h2 className="text-sm font-bold text-white">
+                Nghệ sĩ tham gia
+              </h2>
+              <span className="text-[11px] text-zinc-500">
+                {event.artists!.length} nghệ sĩ
+              </span>
+            </div>
+            <div className="flex gap-3 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {event.artists!.map((a) => {
+                const displayName = a.stageName?.trim() || a.name;
+                return (
+                  <div
+                    key={a.id}
+                    className="flex w-[112px] shrink-0 flex-col items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/50 px-2.5 py-3 text-center"
+                  >
+                    {a.avatarUrl ? (
+                      <img
+                        src={a.avatarUrl}
+                        alt={displayName}
+                        className="size-14 rounded-full object-cover border border-zinc-700"
+                      />
+                    ) : (
+                      <div
+                        className="size-14 rounded-full bg-zinc-500/80 border border-zinc-700"
+                        aria-hidden
+                      />
+                    )}
+                    <div className="min-w-0 w-full">
+                      <p className="truncate text-xs font-semibold text-white">
+                        {displayName}
+                      </p>
+                      {a.stageName?.trim() && a.stageName !== a.name && (
+                        <p className="truncate text-[10px] text-zinc-500">
+                          {a.name}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 

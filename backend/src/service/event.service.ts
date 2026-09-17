@@ -40,6 +40,8 @@ export type CreateEventInput = {
   startTime?: string;
   endTime?: string;
   zones: CreateEventZoneInput[];
+  /** Line-up nghệ sĩ gắn sự kiện */
+  artistIds?: number[];
 };
 
 /** Giới hạn sinh ghế để tránh timeout khi total lớn */
@@ -88,6 +90,16 @@ function serializeEvent(event: {
       seat: { rowName: string; seatNumber: number } | null;
     }>;
   }>;
+  eventArtists?: Array<{
+    role: string | null;
+    artist: {
+      id: number;
+      name: string;
+      stageName: string | null;
+      avatarUrl: string | null;
+      genre: string | null;
+    };
+  }>;
   _count?: { tickets: number };
 }) {
   const ZONE_COLORS = [
@@ -120,6 +132,19 @@ function serializeEvent(event: {
   const hasBookings =
     bookedFromTickets > 0 || soldTicketsTotal > 0;
 
+  const artists = (event.eventArtists ?? []).map((ea) => ({
+    id: ea.artist.id,
+    name: ea.artist.name,
+    stageName: ea.artist.stageName,
+    avatarUrl: ea.artist.avatarUrl,
+    genre: ea.artist.genre,
+    role: ea.role ?? "performer",
+  }));
+  const artistLineup = artists
+    .map((a) => a.stageName?.trim() || a.name)
+    .filter(Boolean)
+    .join(", ");
+
   return {
     id: event.id,
     title: event.title,
@@ -136,6 +161,8 @@ function serializeEvent(event: {
     venue: event.place?.name,
     address: event.place?.address,
     city: event.place?.city,
+    artist: artistLineup || organizerDisplay,
+    artists,
     schedules: event.schedules.map((s) => ({
       id: s.id,
       startTime: s.startTime,
@@ -195,6 +222,19 @@ const eventIncludeList = {
     select: { id: true, fullName: true, email: true, avatarUrl: true },
   },
   schedules: true,
+  eventArtists: {
+    include: {
+      artist: {
+        select: {
+          id: true,
+          name: true,
+          stageName: true,
+          avatarUrl: true,
+          genre: true,
+        },
+      },
+    },
+  },
   eventZones: {
     include: {
       zone: true,
@@ -211,6 +251,19 @@ const eventInclude = {
     select: { id: true, fullName: true, email: true, avatarUrl: true },
   },
   schedules: true,
+  eventArtists: {
+    include: {
+      artist: {
+        select: {
+          id: true,
+          name: true,
+          stageName: true,
+          avatarUrl: true,
+          genre: true,
+        },
+      },
+    },
+  },
   eventZones: {
     include: {
       zone: {
@@ -433,6 +486,127 @@ export class EventService {
     return events.map(serializeEvent);
   }
 
+  /**
+   * Tìm concert / nghệ sĩ cho client.
+   * - q rỗng: trả hotKeywords + upcoming (2–3 sự kiện)
+   * - có q: events + artists khớp
+   */
+  static async search(q?: string) {
+    const query = q?.trim() ?? "";
+
+    const [allEvents, allArtists] = await Promise.all([
+      prisma.event.findMany({
+        include: eventIncludeList,
+        orderBy: { id: "desc" },
+        take: 80,
+      }),
+      prisma.artist.findMany({
+        include: { _count: { select: { eventArtists: true } } },
+        orderBy: { id: "desc" },
+        take: 80,
+      }),
+    ]);
+
+    const serialized = allEvents.map(serializeEvent);
+
+    // Từ khóa nổi bật: nghệ sĩ có gắn sự kiện + một số title sự kiện
+    const artistKeywords = allArtists
+      .slice()
+      .sort(
+        (a, b) =>
+          (b._count?.eventArtists ?? 0) - (a._count?.eventArtists ?? 0),
+      )
+      .slice(0, 12)
+      .map((a) => a.stageName?.trim() || a.name);
+    const eventKeywords = serialized
+      .slice(0, 8)
+      .map((e) => e.title.split(/[—\-|:]/)[0]?.trim())
+      .filter(Boolean) as string[];
+    const hotKeywords = [
+      ...new Set([...artistKeywords, ...eventKeywords].filter(Boolean)),
+    ].slice(0, 10);
+
+    // Sắp diễn ra: upcoming/open, có schedule trong tương lai hoặc status phù hợp
+    const now = Date.now();
+    const upcoming = serialized
+      .filter((e) => {
+        const st = String(e.status || "").toLowerCase();
+        if (st === "ended" || st === "draft") return false;
+        const start = e.schedules?.[0]?.startTime
+          ? new Date(e.schedules[0].startTime).getTime()
+          : null;
+        if (start != null) return start >= now - 24 * 60 * 60 * 1000;
+        return st === "upcoming" || st === "open" || st === "active";
+      })
+      .slice(0, 3);
+
+    if (!query) {
+      const stars = allArtists
+        .slice()
+        .sort(
+          (a, b) =>
+            (b._count?.eventArtists ?? 0) - (a._count?.eventArtists ?? 0),
+        )
+        .slice(0, 12)
+        .map((a) => ({
+          id: a.id,
+          name: a.name,
+          stageName: a.stageName,
+          avatarUrl: a.avatarUrl,
+          eventCount: a._count?.eventArtists ?? 0,
+        }));
+
+      return {
+        query: "",
+        events: [],
+        artists: stars,
+        hotKeywords,
+        upcoming,
+      };
+    }
+
+    const qLower = query.toLowerCase();
+    const events = serialized.filter((e) => {
+      const hay = [
+        e.title,
+        e.description,
+        e.artist,
+        e.venue,
+        e.city,
+        e.place?.name,
+        ...(e.artists ?? []).map(
+          (a: { name: string; stageName?: string | null }) =>
+            `${a.name} ${a.stageName ?? ""}`,
+        ),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(qLower);
+    });
+
+    const artists = allArtists
+      .filter((a) => {
+        const hay = `${a.name} ${a.stageName ?? ""}`.toLowerCase();
+        return hay.includes(qLower);
+      })
+      .map((a) => ({
+        id: a.id,
+        name: a.name,
+        stageName: a.stageName,
+        avatarUrl: a.avatarUrl,
+        eventCount: a._count?.eventArtists ?? 0,
+      }));
+
+    return {
+      query,
+      events,
+      artists,
+      hotKeywords,
+      upcoming,
+    };
+  }
+
   static async getById(id: number) {
     const event = await prisma.event.findUnique({
       where: { id },
@@ -592,6 +766,36 @@ export class EventService {
           const rowCount = Math.max(1, Math.floor(Number(z.rowCount) || 1));
           await generateSeatsForZone(tx, zoneId, z.totalSeats, rowCount);
         }
+      }
+
+      const artistIds = [
+        ...new Set(
+          (input.artistIds ?? [])
+            .map((id) => Number(id))
+            .filter((id) => Number.isInteger(id) && id > 0),
+        ),
+      ];
+      if (artistIds.length) {
+        const found = await tx.artist.findMany({
+          where: { id: { in: artistIds } },
+          select: { id: true },
+        });
+        const foundIds = new Set(found.map((a) => a.id));
+        const missing = artistIds.filter((id) => !foundIds.has(id));
+        if (missing.length) {
+          throw Object.assign(
+            new Error(`Nghệ sĩ không tồn tại: #${missing.join(", #")}`),
+            { status: 400 },
+          );
+        }
+        await tx.eventArtist.createMany({
+          data: artistIds.map((artistId) => ({
+            eventId: created.id,
+            artistId,
+            role: "performer",
+          })),
+          skipDuplicates: true,
+        });
       }
 
       return tx.event.findUniqueOrThrow({

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { toast } from '@/lib/toast';
 
 // ==========================================
 // TYPES & INTERFACES
@@ -189,7 +190,7 @@ export default function AdminDashboardPage() {
       setEvents([created, ...events]);
       setNewEvent({ name: '', location: '', date: '', priceVnd: '', totalTickets: '', posterUrl: '' });
       setIsSubmitting(false);
-      alert('Tạo sự kiện thành công & Đã đăng ký với Program ID GGadYLQQ...bq1H!');
+      toast.success('Tạo sự kiện thành công & Đã đăng ký với Program ID GGadYLQQ...bq1H!');
     }, 1000);
   };
 

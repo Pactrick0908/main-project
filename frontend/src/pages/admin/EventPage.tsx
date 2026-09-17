@@ -11,6 +11,8 @@ import {
   Map,
   Pencil,
   Lock,
+  Mic2,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +26,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import {
   adminApi,
+  type AdminArtist,
   type AdminEvent,
   type AdminEventEditPolicy,
   type AdminOrganizer,
@@ -42,6 +45,8 @@ import {
   AdminConfirmModal,
 } from "@/layouts/admin/HeaderAdmin";
 import { Modal } from "@/components/ui/modal";
+import { ImageUpload } from "@/components/ui/image-upload";
+import { toast } from "@/lib/toast";
 
 function resolvePolicy(evt: AdminEvent): AdminEventEditPolicy {
   if (evt.editPolicy) return evt.editPolicy;
@@ -138,12 +143,69 @@ const DEFAULT_ZONES: ZoneDraft[] = [
   },
 ];
 
+/** Chuẩn hóa nhập ngày → dd/mm/yyyy (chấp nhận d/m/yyyy, dd-mm-yyyy…) */
+function formatDateInput(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+/** Parse dd/mm/yyyy → Date local (00:00) hoặc null */
+function parseDdMmYyyy(raw: string): Date | null {
+  const m = raw.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const year = Number(m[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const d = new Date(year, month - 1, day);
+  if (
+    d.getFullYear() !== year ||
+    d.getMonth() !== month - 1 ||
+    d.getDate() !== day
+  ) {
+    return null;
+  }
+  return d;
+}
+
+/** Ghép dd/mm/yyyy + HH:mm → ISO string (local) */
+function toIsoFromVn(dateStr: string, timeStr: string): string | null {
+  const d = parseDdMmYyyy(dateStr);
+  if (!d) return null;
+  const tm = timeStr.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!tm) return null;
+  const hh = Number(tm[1]);
+  const mm = Number(tm[2]);
+  if (hh > 23 || mm > 59) return null;
+  d.setHours(hh, mm, 0, 0);
+  return d.toISOString();
+}
+
+function formatScheduleLabel(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
+}
+
 export default function EventPage() {
   const { isAuthenticated } = useAuth();
 
   const [events, setEvents] = useState<AdminEvent[]>([]);
   const [places, setPlaces] = useState<AdminPlace[]>([]);
   const [organizers, setOrganizers] = useState<AdminOrganizer[]>([]);
+  const [artists, setArtists] = useState<AdminArtist[]>([]);
+  const [selectedArtistIds, setSelectedArtistIds] = useState<number[]>([]);
+  const [artistSearch, setArtistSearch] = useState("");
+  const [quickArtistOpen, setQuickArtistOpen] = useState(false);
+  const [quickArtist, setQuickArtist] = useState({ name: "", avatarUrl: "" });
+  const [quickArtistBusy, setQuickArtistBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -154,7 +216,10 @@ export default function EventPage() {
     location: "",
     city: "Hà Nội",
     address: "",
-    date: "",
+    startDate: "",
+    startTime: "18:00",
+    endDate: "",
+    endTime: "23:00",
     organizerId: "",
     organizerName: "",
     logoUrl: "",
@@ -164,10 +229,6 @@ export default function EventPage() {
   });
   const [zoneDrafts, setZoneDrafts] = useState<ZoneDraft[]>(DEFAULT_ZONES);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formMessage, setFormMessage] = useState<{
-    type: "ok" | "err";
-    text: string;
-  } | null>(null);
   const [modal, setModal] = useState<ConfirmModalState | null>(null);
   const [editing, setEditing] = useState<AdminEvent | null>(null);
   const [editForm, setEditForm] = useState({
@@ -183,16 +244,20 @@ export default function EventPage() {
   const refresh = useCallback(async () => {
     setError(null);
     try {
-      const [ev, pl, org] = await Promise.all([
+      const [ev, pl, org, art] = await Promise.all([
         adminApi.listEvents(),
         adminApi.listPlaces().catch(() => ({ data: { places: [] as AdminPlace[] } })),
         adminApi
           .listOrganizers()
           .catch(() => ({ data: { organizers: [] as AdminOrganizer[] } })),
+        adminApi
+          .listArtists()
+          .catch(() => ({ data: { artists: [] as AdminArtist[] } })),
       ]);
       setEvents(ev.data.events);
       setPlaces(pl.data.places);
       setOrganizers(org.data.organizers);
+      setArtists(art.data.artists);
       setLastUpdated(new Date().toLocaleTimeString("vi-VN"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Không tải được dữ liệu admin");
@@ -217,47 +282,111 @@ export default function EventPage() {
     [places, newEvent.placeId],
   );
 
+  const filteredArtists = useMemo(() => {
+    const q = artistSearch.trim().toLowerCase();
+    if (!q) return artists;
+    return artists.filter(
+      (a) =>
+        a.name.toLowerCase().includes(q) ||
+        (a.stageName ?? "").toLowerCase().includes(q),
+    );
+  }, [artists, artistSearch]);
+
+  const toggleArtist = (id: number) => {
+    setSelectedArtistIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+
+  const handleQuickCreateArtist = async () => {
+    if (!quickArtist.name.trim()) {
+      toast.error("Nhập tên nghệ sĩ");
+      return;
+    }
+    setQuickArtistBusy(true);
+    try {
+      const res = await adminApi.createArtist({
+        name: quickArtist.name.trim(),
+        avatarUrl: quickArtist.avatarUrl.trim() || undefined,
+      });
+      const created = res.data.artist;
+      setArtists((prev) => [created, ...prev]);
+      setSelectedArtistIds((prev) =>
+        prev.includes(created.id) ? prev : [...prev, created.id],
+      );
+      setQuickArtist({ name: "", avatarUrl: "" });
+      setQuickArtistOpen(false);
+      toast.success(`Đã thêm nghệ sĩ #${created.id}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Tạo nghệ sĩ thất bại");
+    } finally {
+      setQuickArtistBusy(false);
+    }
+  };
+
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
-    setFormMessage(null);
 
     if (!newEvent.title.trim()) {
-      setFormMessage({ type: "err", text: "Vui lòng nhập tên sự kiện" });
+      toast.error("Vui lòng nhập tên sự kiện");
       return;
     }
     if (!newEvent.placeId && !newEvent.location.trim()) {
-      setFormMessage({
-        type: "err",
-        text: "Chọn địa điểm có sẵn hoặc nhập địa điểm mới",
-      });
+      toast.error("Chọn địa điểm có sẵn hoặc nhập địa điểm mới");
       return;
     }
     if (!zoneDrafts.length) {
-      setFormMessage({ type: "err", text: "Cần ít nhất 1 khu vực / hạng vé" });
+      toast.error("Cần ít nhất 1 khu vực / hạng vé");
       return;
     }
+
+    const hasAnySchedule =
+      newEvent.startDate.trim() ||
+      newEvent.endDate.trim() ||
+      newEvent.startTime.trim() ||
+      newEvent.endTime.trim();
+
+    let startIso: string | undefined;
+    let endIso: string | undefined;
+
+    if (hasAnySchedule) {
+      if (!newEvent.startDate.trim() || !newEvent.startTime.trim()) {
+        toast.error("Nhập ngày bắt đầu (dd/mm/yyyy) và giờ bắt đầu");
+        return;
+      }
+      if (!newEvent.endDate.trim() || !newEvent.endTime.trim()) {
+        toast.error("Nhập ngày kết thúc (dd/mm/yyyy) và giờ kết thúc");
+        return;
+      }
+      startIso = toIsoFromVn(newEvent.startDate, newEvent.startTime) ?? undefined;
+      endIso = toIsoFromVn(newEvent.endDate, newEvent.endTime) ?? undefined;
+      if (!startIso) {
+        toast.error("Ngày/giờ bắt đầu không hợp lệ (dd/mm/yyyy + HH:mm)");
+        return;
+      }
+      if (!endIso) {
+        toast.error("Ngày/giờ kết thúc không hợp lệ (dd/mm/yyyy + HH:mm)");
+        return;
+      }
+      if (new Date(endIso) <= new Date(startIso)) {
+        toast.error("Thời gian kết thúc phải sau thời gian bắt đầu");
+        return;
+      }
+    }
+
     for (const z of zoneDrafts) {
       if (!z.name.trim() || !(Number(z.price) > 0) || !(Number(z.totalSeats) >= 1)) {
-        setFormMessage({
-          type: "err",
-          text: `Khu "${z.name || "?"}" cần tên, giá > 0 và số lượng ≥ 1`,
-        });
+        toast.error(`Khu "${z.name || "?"}" cần tên, giá > 0 và số lượng ≥ 1`);
         return;
       }
       if (z.hasSeats) {
         const rows = Number(z.rowCount);
         if (!Number.isInteger(rows) || rows < 1) {
-          setFormMessage({
-            type: "err",
-            text: `Khu "${z.name}" (có ghế) cần nhập số hàng ≥ 1`,
-          });
+          toast.error(`Khu "${z.name}" (có ghế) cần nhập số hàng ≥ 1`);
           return;
         }
         if (rows > Number(z.totalSeats)) {
-          setFormMessage({
-            type: "err",
-            text: `Khu "${z.name}": số hàng không được lớn hơn tổng ghế`,
-          });
+          toast.error(`Khu "${z.name}": số hàng không được lớn hơn tổng ghế`);
           return;
         }
       }
@@ -266,7 +395,8 @@ export default function EventPage() {
     const normalizeUrl = (raw: string) => {
       const v = raw.trim();
       if (!v) return undefined;
-      if (/^https?:\/\//i.test(v)) return v;
+      // Cloudinary / absolute URL giữ nguyên
+      if (/^https?:\/\//i.test(v) || v.startsWith("data:")) return v;
       return `https://${v}`;
     };
 
@@ -292,12 +422,9 @@ export default function EventPage() {
                 city: (newEvent.city || "Hà Nội").trim(),
               },
             }),
-        startTime: newEvent.date
-          ? new Date(`${newEvent.date}T18:00:00`).toISOString()
-          : undefined,
-        endTime: newEvent.date
-          ? new Date(`${newEvent.date}T23:00:00`).toISOString()
-          : undefined,
+        startTime: startIso,
+        endTime: endIso,
+        artistIds: selectedArtistIds,
         zones: zoneDrafts.map((z) => ({
           ...(z.zoneId ? { zoneId: z.zoneId } : {}),
           name: z.name.trim(),
@@ -315,7 +442,10 @@ export default function EventPage() {
         location: "",
         city: "Hà Nội",
         address: "",
-        date: "",
+        startDate: "",
+        startTime: "18:00",
+        endDate: "",
+        endTime: "23:00",
         organizerId: "",
         organizerName: "",
         logoUrl: "",
@@ -326,16 +456,14 @@ export default function EventPage() {
       setZoneDrafts(
         DEFAULT_ZONES.map((z) => ({ ...z, key: `${z.key}-${Date.now()}` })),
       );
-      setFormMessage({
-        type: "ok",
-        text: `Đã tạo sự kiện #${created.data.event.id} — ${created.data.event.title}`,
-      });
+      setSelectedArtistIds([]);
+      setArtistSearch("");
+      toast.success(
+        `Đã tạo sự kiện #${created.data.event.id} — ${created.data.event.title}`,
+      );
       await refresh();
     } catch (err) {
-      setFormMessage({
-        type: "err",
-        text: err instanceof Error ? err.message : "Tạo sự kiện thất bại",
-      });
+      toast.error(err instanceof Error ? err.message : "Tạo sự kiện thất bại");
     } finally {
       setIsSubmitting(false);
     }
@@ -385,11 +513,7 @@ export default function EventPage() {
   const openEdit = (evt: AdminEvent) => {
     const policy = resolvePolicy(evt);
     if (!policy.canEditMarketing && !policy.canEditAll) {
-      setModal({
-        kind: "alert",
-        title: "Không thể sửa",
-        description: policy.reason,
-      });
+      toast.error("Không thể sửa", policy.reason);
       return;
     }
     setEditing(evt);
@@ -416,9 +540,10 @@ export default function EventPage() {
         logoUrl: editForm.logoUrl.trim(),
       });
       setEditing(null);
+      toast.success("Đã cập nhật sự kiện");
       await refresh();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Cập nhật thất bại");
+      toast.error(err instanceof Error ? err.message : "Cập nhật thất bại");
     } finally {
       setEditSaving(false);
     }
@@ -429,17 +554,13 @@ export default function EventPage() {
       await adminApi.updateEvent(id, { status });
       await refresh();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Cập nhật thất bại");
+      toast.error(err instanceof Error ? err.message : "Cập nhật thất bại");
     }
   };
 
   const handleDeleteEvent = (id: number, title: string, policy: AdminEventEditPolicy) => {
     if (!policy.canDeleteEvent) {
-      setModal({
-        kind: "alert",
-        title: "Không thể xóa",
-        description: policy.reason,
-      });
+      toast.error("Không thể xóa", policy.reason);
       return;
     }
     setModal({
@@ -481,18 +602,6 @@ export default function EventPage() {
               noValidate
               className="space-y-6"
             >
-              {formMessage && (
-                <div
-                  className={cn(
-                    "rounded-xl border px-4 py-3 text-sm",
-                    formMessage.type === "ok"
-                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                      : "border-destructive/30 bg-destructive/10 text-destructive",
-                  )}
-                >
-                  {formMessage.text}
-                </div>
-              )}
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-1.5 md:col-span-2">
                   <label className="text-xs font-medium text-muted-foreground">
@@ -597,17 +706,98 @@ export default function EventPage() {
                   </>
                 )}
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">
-                    Ngày diễn ra
-                  </label>
-                  <Input
-                    type="date"
-                    value={newEvent.date}
-                    onChange={(e) =>
-                      setNewEvent({ ...newEvent, date: e.target.value })
-                    }
-                  />
+                <div className="space-y-2 md:col-span-2">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Lịch diễn
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1.5 rounded-xl border border-border bg-muted/20 p-3">
+                      <p className="text-[11px] font-semibold text-foreground">
+                        Bắt đầu
+                      </p>
+                      <div className="grid grid-cols-[1.4fr_1fr] gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">
+                            Ngày (dd/mm/yyyy)
+                          </label>
+                          <Input
+                            inputMode="numeric"
+                            placeholder="28/09/2026"
+                            value={newEvent.startDate}
+                            onChange={(e) => {
+                              const startDate = formatDateInput(e.target.value);
+                              setNewEvent((prev) => ({
+                                ...prev,
+                                startDate,
+                                // Gợi ý cùng ngày kết thúc nếu chưa nhập
+                                endDate:
+                                  prev.endDate.trim() || !startDate
+                                    ? prev.endDate
+                                    : startDate.length === 10
+                                      ? startDate
+                                      : prev.endDate,
+                              }));
+                            }}
+                            maxLength={10}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">
+                            Giờ
+                          </label>
+                          <Input
+                            type="time"
+                            value={newEvent.startTime}
+                            onChange={(e) =>
+                              setNewEvent({
+                                ...newEvent,
+                                startTime: e.target.value,
+                              })
+                            }
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-1.5 rounded-xl border border-border bg-muted/20 p-3">
+                      <p className="text-[11px] font-semibold text-foreground">
+                        Kết thúc
+                      </p>
+                      <div className="grid grid-cols-[1.4fr_1fr] gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">
+                            Ngày (dd/mm/yyyy)
+                          </label>
+                          <Input
+                            inputMode="numeric"
+                            placeholder="28/09/2026"
+                            value={newEvent.endDate}
+                            onChange={(e) =>
+                              setNewEvent({
+                                ...newEvent,
+                                endDate: formatDateInput(e.target.value),
+                              })
+                            }
+                            maxLength={10}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">
+                            Giờ
+                          </label>
+                          <Input
+                            type="time"
+                            value={newEvent.endTime}
+                            onChange={(e) =>
+                              setNewEvent({
+                                ...newEvent,
+                                endTime: e.target.value,
+                              })
+                            }
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -670,17 +860,19 @@ export default function EventPage() {
                   </div>
                   <div className="space-y-1.5 md:col-span-2">
                     <label className="text-xs font-medium text-muted-foreground">
-                      URL ảnh / logo
+                      Logo nhà tổ chức
                     </label>
-                    <Input
+                    <ImageUpload
+                      folder="organizers"
+                      variant="square"
+                      label="Upload logo Cloudinary"
                       value={newEvent.logoUrl}
-                      onChange={(e) =>
-                        setNewEvent({
-                          ...newEvent,
-                          logoUrl: e.target.value,
-                        })
+                      onChange={(url) =>
+                        setNewEvent((e) => ({ ...e, logoUrl: url }))
                       }
-                      placeholder="https://example.com/logo.png"
+                      onClear={() =>
+                        setNewEvent((e) => ({ ...e, logoUrl: "" }))
+                      }
                     />
                   </div>
                   {newEvent.logoUrl.trim() && (
@@ -709,6 +901,77 @@ export default function EventPage() {
 
               <Separator />
 
+              {/* ── Nghệ sĩ / line-up ──────────────────────────────── */}
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Mic2 className="size-4 text-primary" />
+                    <div>
+                      <p className="text-sm font-medium">Nghệ sĩ</p>
+                      <p className="text-xs text-muted-foreground">
+                        Chọn line-up cho sự kiện · đã chọn{" "}
+                        {selectedArtistIds.length}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setQuickArtistOpen(true)}
+                  >
+                    <Plus className="size-3.5" />
+                    Tạo nhanh
+                  </Button>
+                </div>
+                <Input
+                  value={artistSearch}
+                  onChange={(e) => setArtistSearch(e.target.value)}
+                  placeholder="Tìm nghệ sĩ…"
+                />
+                <div className="flex max-h-48 flex-wrap gap-2 overflow-y-auto rounded-xl border border-border bg-muted/20 p-3">
+                  {filteredArtists.map((a) => {
+                    const selected = selectedArtistIds.includes(a.id);
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => toggleArtist(a.id)}
+                        className={cn(
+                          "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs transition-colors",
+                          selected
+                            ? "border-primary bg-primary/10 text-foreground"
+                            : "border-border bg-background text-muted-foreground hover:border-primary/40",
+                        )}
+                      >
+                        {a.avatarUrl ? (
+                          <img
+                            src={a.avatarUrl}
+                            alt=""
+                            className="size-6 rounded-full object-cover"
+                          />
+                        ) : (
+                          <span className="size-6 rounded-full bg-zinc-400/80" />
+                        )}
+                        <span className="max-w-[140px] truncate font-medium">
+                          {a.stageName || a.name}
+                        </span>
+                        {selected && (
+                          <X className="size-3 opacity-70" />
+                        )}
+                      </button>
+                    );
+                  })}
+                  {!filteredArtists.length && (
+                    <p className="w-full text-xs text-muted-foreground">
+                      Không có nghệ sĩ. Bấm “Tạo nhanh” để thêm.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <Separator />
+
               {/* ── Ảnh poster & sơ đồ ─────────────────────────────── */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
@@ -724,69 +987,39 @@ export default function EventPage() {
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
                       <ImageIcon className="size-3" />
-                      URL ảnh poster
+                      Ảnh poster
                     </label>
-                    <Input
+                    <ImageUpload
+                      folder="events"
+                      variant="banner"
+                      label="Upload poster Cloudinary"
                       value={newEvent.bannerUrl}
-                      onChange={(e) =>
-                        setNewEvent({
-                          ...newEvent,
-                          bannerUrl: e.target.value,
-                        })
+                      onChange={(url) =>
+                        setNewEvent((e) => ({ ...e, bannerUrl: url }))
                       }
-                      placeholder="https://example.com/poster.jpg"
+                      onClear={() =>
+                        setNewEvent((e) => ({ ...e, bannerUrl: "" }))
+                      }
                     />
-                    {newEvent.bannerUrl.trim() ? (
-                      <div className="overflow-hidden rounded-xl border border-border bg-muted/20">
-                        <img
-                          src={newEvent.bannerUrl}
-                          alt="Poster preview"
-                          className="h-36 w-full object-cover"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.opacity =
-                              "0.3";
-                          }}
-                        />
-                      </div>
-                    ) : (
-                      <div className="flex h-24 items-center justify-center rounded-xl border border-dashed border-border text-[11px] text-muted-foreground">
-                        Preview poster
-                      </div>
-                    )}
                   </div>
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
                       <Map className="size-3" />
-                      URL ảnh sơ đồ
+                      Ảnh sơ đồ chỗ ngồi
                     </label>
-                    <Input
+                    <ImageUpload
+                      folder="maps"
+                      variant="banner"
+                      label="Upload sơ đồ Cloudinary"
                       value={newEvent.mapUrl}
-                      onChange={(e) =>
-                        setNewEvent({
-                          ...newEvent,
-                          mapUrl: e.target.value,
-                        })
+                      onChange={(url) =>
+                        setNewEvent((e) => ({ ...e, mapUrl: url }))
                       }
-                      placeholder="https://example.com/seatmap.jpg"
+                      onClear={() =>
+                        setNewEvent((e) => ({ ...e, mapUrl: "" }))
+                      }
                     />
-                    {newEvent.mapUrl.trim() ? (
-                      <div className="overflow-hidden rounded-xl border border-border bg-muted/20">
-                        <img
-                          src={newEvent.mapUrl}
-                          alt="Sơ đồ preview"
-                          className="h-36 w-full object-cover"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.opacity =
-                              "0.3";
-                          }}
-                        />
-                      </div>
-                    ) : (
-                      <div className="flex h-24 items-center justify-center rounded-xl border border-dashed border-border text-[11px] text-muted-foreground">
-                        Preview sơ đồ chỗ ngồi
-                      </div>
-                    )}
                   </div>
                 </div>
               </div>
@@ -1021,6 +1254,28 @@ export default function EventPage() {
                     {evt.place?.name ?? "—"}
                     {evt.place?.city ? `, ${evt.place.city}` : ""}
                   </p>
+                  {evt.schedules?.[0] && (
+                    <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <CalendarDays className="size-3.5 shrink-0" />
+                      <span className="truncate">
+                        {formatScheduleLabel(evt.schedules[0].startTime)}
+                        {" → "}
+                        {formatScheduleLabel(evt.schedules[0].endTime)}
+                      </span>
+                    </p>
+                  )}
+                  {(evt.artists?.length || evt.artist) && (
+                    <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Mic2 className="size-3.5 shrink-0" />
+                      <span className="truncate">
+                        {evt.artists?.length
+                          ? evt.artists
+                              .map((a) => a.stageName || a.name)
+                              .join(", ")
+                          : evt.artist}
+                      </span>
+                    </p>
+                  )}
                   {(evt.organizerName || evt.organizer || evt.logoUrl) && (
                     <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                       {evt.logoUrl ? (
@@ -1156,84 +1411,155 @@ export default function EventPage() {
       </div>
 
       <Modal
+        open={quickArtistOpen}
+        onOpenChange={setQuickArtistOpen}
+        title="Tạo nghệ sĩ nhanh"
+        description="Điền tên và upload ảnh (không bắt buộc). Không ảnh → nền xám."
+        size="md"
+        confirmLabel="Tạo & chọn"
+        confirmLoading={quickArtistBusy}
+        onConfirm={() => void handleQuickCreateArtist()}
+      >
+        <div className="space-y-4">
+          <ImageUpload
+            folder="artists"
+            variant="avatar"
+            label="Upload ảnh Cloudinary"
+            value={quickArtist.avatarUrl}
+            onChange={(url) =>
+              setQuickArtist((f) => ({ ...f, avatarUrl: url }))
+            }
+            onClear={() => setQuickArtist((f) => ({ ...f, avatarUrl: "" }))}
+          />
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium">Tên nghệ sĩ *</label>
+            <Input
+              value={quickArtist.name}
+              onChange={(e) =>
+                setQuickArtist((f) => ({ ...f, name: e.target.value }))
+              }
+              placeholder="VD: HIEUTHUHAI"
+              autoFocus
+            />
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
         open={!!editing}
         onOpenChange={(open) => {
           if (!open) setEditing(null);
         }}
-        title="Sửa thông tin sự kiện"
+        title="Sửa sự kiện"
         description={
           editing
             ? resolvePolicy(editing).canEditSensitive
-              ? "Nháp / chưa bán — được sửa truyền thông (địa điểm & zone vẫn tạo lại bằng flow riêng)."
-              : "Chỉ sửa truyền thông & hiển thị. Địa điểm, zone, giá bị khóa."
+              ? "Được sửa thông tin hiển thị."
+              : "Chỉ truyền thông — địa điểm / zone / giá đã khóa."
             : undefined
         }
-        size="lg"
+        size="md"
         confirmLabel="Lưu"
         confirmLoading={editSaving}
         onConfirm={() => void handleSaveEdit()}
+        className="gap-3"
       >
         {editing && (
-          <div className="grid gap-3">
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium">Tiêu đề</label>
+          <div className="grid max-h-[min(70vh,520px)] gap-2.5 overflow-y-auto pr-0.5">
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-muted-foreground">
+                Tiêu đề
+              </label>
               <Input
                 value={editForm.title}
                 onChange={(e) =>
                   setEditForm((f) => ({ ...f, title: e.target.value }))
                 }
+                className="h-8"
               />
             </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium">Mô tả</label>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-muted-foreground">
+                Mô tả
+              </label>
               <textarea
                 value={editForm.description}
                 onChange={(e) =>
                   setEditForm((f) => ({ ...f, description: e.target.value }))
                 }
-                rows={4}
-                className="w-full rounded-lg border border-input bg-input/30 px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                rows={2}
+                className="w-full resize-none rounded-lg border border-input bg-input/30 px-2.5 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               />
             </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium">Nhà tổ chức (hiển thị)</label>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-muted-foreground">
+                Nhà tổ chức
+              </label>
               <Input
                 value={editForm.organizerName}
                 onChange={(e) =>
                   setEditForm((f) => ({ ...f, organizerName: e.target.value }))
                 }
+                className="h-8"
               />
             </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium">Banner URL</label>
-              <Input
-                value={editForm.bannerUrl}
-                onChange={(e) =>
-                  setEditForm((f) => ({ ...f, bannerUrl: e.target.value }))
-                }
-              />
+
+            <div className="grid grid-cols-3 gap-2 pt-0.5">
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-muted-foreground">
+                  Banner
+                </label>
+                <ImageUpload
+                  compact
+                  folder="events"
+                  variant="banner"
+                  label="Upload"
+                  value={editForm.bannerUrl}
+                  onChange={(url) =>
+                    setEditForm((f) => ({ ...f, bannerUrl: url }))
+                  }
+                  onClear={() =>
+                    setEditForm((f) => ({ ...f, bannerUrl: "" }))
+                  }
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-muted-foreground">
+                  Sơ đồ
+                </label>
+                <ImageUpload
+                  compact
+                  folder="maps"
+                  variant="banner"
+                  label="Upload"
+                  value={editForm.mapUrl}
+                  onChange={(url) =>
+                    setEditForm((f) => ({ ...f, mapUrl: url }))
+                  }
+                  onClear={() => setEditForm((f) => ({ ...f, mapUrl: "" }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-muted-foreground">
+                  Logo
+                </label>
+                <ImageUpload
+                  compact
+                  folder="organizers"
+                  variant="square"
+                  label="Upload"
+                  value={editForm.logoUrl}
+                  onChange={(url) =>
+                    setEditForm((f) => ({ ...f, logoUrl: url }))
+                  }
+                  onClear={() => setEditForm((f) => ({ ...f, logoUrl: "" }))}
+                />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium">Map URL</label>
-              <Input
-                value={editForm.mapUrl}
-                onChange={(e) =>
-                  setEditForm((f) => ({ ...f, mapUrl: e.target.value }))
-                }
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium">Logo URL</label>
-              <Input
-                value={editForm.logoUrl}
-                onChange={(e) =>
-                  setEditForm((f) => ({ ...f, logoUrl: e.target.value }))
-                }
-              />
-            </div>
+
             {!resolvePolicy(editing).canEditSensitive && (
-              <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
-                Đã khóa: địa điểm, cấu trúc zone/ghế, giá vé gốc.
+              <p className="text-[10px] leading-snug text-muted-foreground">
+                Đã khóa: địa điểm, zone/ghế, giá vé.
               </p>
             )}
           </div>

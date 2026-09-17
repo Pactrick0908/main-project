@@ -4,6 +4,7 @@ import HomePage from "@/pages/client/home/HomePage";
 import Dashboard from "@/pages/admin/Dashboard";
 import PlacePage from "@/pages/admin/PlacePage";
 import OrganizerPage from "@/pages/admin/OrganizerPage";
+import ArtistPage from "@/pages/admin/ArtistPage";
 import EventPage from "@/pages/admin/EventPage";
 import TicketPage from "@/pages/admin/TicketPage";
 import AirdropPage from "@/pages/admin/AirdropPage";
@@ -15,6 +16,7 @@ import MyTicketsPage from "@/pages/client/ticket/MyTicketsPage";
 import ScannerPage from "@/pages/admin/ScannerPage";
 import EventDetailPage from "@/pages/client/event/EventDetailPage";
 import EventResalePage from "@/pages/client/market/resale/EventResalePage";
+import SearchPage from "@/pages/client/search/SearchPage";
 
 export const router = createBrowserRouter([
   {
@@ -24,6 +26,10 @@ export const router = createBrowserRouter([
       {
         index: true,
         element: <HomePage />,
+      },
+      {
+        path: "search",
+        element: <SearchPage />,
       },
       {
         path: "my-tickets",
@@ -72,6 +78,10 @@ export const router = createBrowserRouter([
       {
         path: "organizers",
         element: <OrganizerPage />,
+      },
+      {
+        path: "artists",
+        element: <ArtistPage />,
       },
       {
         path: "events",

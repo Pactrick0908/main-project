@@ -1,3 +1,12 @@
+export interface EventArtist {
+  id: number;
+  name: string;
+  stageName?: string | null;
+  avatarUrl?: string | null;
+  genre?: string | null;
+  role?: string;
+}
+
 export interface EventZone {
   id: string;
   name: string;
@@ -18,6 +27,8 @@ export interface DetailedEvent {
   id: number;
   title: string;
   artist: string;
+  /** Line-up nghệ sĩ từ DB (event_artists) */
+  artists?: EventArtist[];
   category: string;
   bannerImage: string;
   thumbnail: string;
