@@ -1,9 +1,9 @@
 /**
  * Nghiệp vụ 4 trạng thái sự kiện:
  * - draft: sửa Full
- * - upcoming: Full nếu chưa từng bán; khóa nhạy cảm nếu đã có vé
- * - open (aliases: active, published): chỉ truyền thông; khóa place/zones/price
- * - ended (alias: completed): read-only toàn bộ
+ * - upcoming: Full trừ địa điểm và giá vé
+ * - open: Full trừ địa điểm, giá bán; không giảm số ghế (được tăng)
+ * - ended: không sửa gì
  */
 
 export const EVENT_STATUSES = ["draft", "upcoming", "open", "ended"] as const;
@@ -20,17 +20,18 @@ export type EventEditPolicy = {
   status: EventStatus;
   /** Có vé đã đặt/bán (sold|held|checked_in|valid) */
   hasBookings: boolean;
-  /** draft, hoặc upcoming chưa bán */
+  /** Chỉ nháp — sửa tất cả kể cả địa điểm và giá */
   canEditAll: boolean;
   /** Truyền thông: title, description, banner, map, logo, organizerName */
   canEditMarketing: boolean;
-  /** placeId, zones, seats, price, lịch (nếu full) */
+  /** Lịch diễn / cấu trúc zone (không gồm địa điểm & giá khi khóa) */
   canEditSensitive: boolean;
   canChangePlace: boolean;
   canChangePrice: boolean;
   canModifyZones: boolean;
-  /** Tăng ghế / thêm zone mới khi đang open vẫn được; xóa zone có booking thì không */
   canAddZone: boolean;
+  /** Đang bán: không giảm totalSeats (vẫn được tăng) */
+  canDecreaseSeats: boolean;
   canDeleteEvent: boolean;
   canChangeStatus: boolean;
   /** Gợi ý UI */
@@ -75,10 +76,10 @@ export function buildEventEditPolicy(
       canChangePrice: false,
       canModifyZones: false,
       canAddZone: false,
+      canDecreaseSeats: false,
       canDeleteEvent: false,
       canChangeStatus: false,
-      reason:
-        "Đã kết thúc — khóa toàn bộ để bảo toàn đối soát doanh thu / lịch sử vé.",
+      reason: "Đã kết thúc — không được sửa gì.",
     };
   }
 
@@ -93,47 +94,47 @@ export function buildEventEditPolicy(
       canChangePrice: true,
       canModifyZones: true,
       canAddZone: true,
+      canDecreaseSeats: true,
       canDeleteEvent: true,
       canChangeStatus: true,
-      reason: "Nháp — được sửa Full (kể cả địa điểm, zone, giá, lịch).",
+      reason: "Nháp — được sửa Full.",
     };
   }
 
-  if (status === "upcoming" && !hasBookings) {
+  if (status === "upcoming") {
     return {
       status,
-      hasBookings: false,
-      canEditAll: true,
+      hasBookings,
+      canEditAll: false,
       canEditMarketing: true,
       canEditSensitive: true,
-      canChangePlace: true,
-      canChangePrice: true,
+      canChangePlace: false,
+      canChangePrice: false,
       canModifyZones: true,
       canAddZone: true,
-      canDeleteEvent: true,
+      canDecreaseSeats: true,
+      canDeleteEvent: false,
       canChangeStatus: true,
-      reason:
-        "Sắp diễn ra (chưa mở bán) — chưa có vé → được sửa Full.",
+      reason: "Sắp diễn ra — sửa Full trừ địa điểm và giá vé.",
     };
   }
 
-  // open, hoặc upcoming đã có vé → khóa nhạy cảm như đang mở bán
-  const lockedUpcoming = status === "upcoming" && hasBookings;
+  // open
   return {
     status,
     hasBookings,
     canEditAll: false,
     canEditMarketing: true,
-    canEditSensitive: false,
+    canEditSensitive: true,
     canChangePlace: false,
     canChangePrice: false,
-    canModifyZones: false,
+    canModifyZones: true,
     canAddZone: true,
+    canDecreaseSeats: false,
     canDeleteEvent: false,
     canChangeStatus: true,
-    reason: lockedUpcoming
-      ? "Sắp diễn ra (đã bán vé) — khóa địa điểm / zone / giá; chỉ sửa truyền thông."
-      : "Đang mở bán — chỉ sửa truyền thông; khóa địa điểm, giá và cấu trúc zone đã bán.",
+    reason:
+      "Đang mở bán — sửa Full trừ địa điểm và giá; không giảm số ghế (được tăng).",
   };
 }
 
@@ -145,6 +146,7 @@ export const MARKETING_FIELDS = [
   "bannerUrl",
   "mapUrl",
   "logoUrl",
+  "isFeatured",
 ] as const;
 
 export type MarketingField = (typeof MARKETING_FIELDS)[number];
@@ -173,32 +175,50 @@ export function assertCanUpdateEvent(
 
   if (policy.canEditAll) return;
 
-  // Chỉ marketing (+ status) khi khóa nhạy cảm
-  const sensitiveKeys = [
-    "placeId",
-    "place",
-    "zones",
-    "price",
-    "totalSeats",
-    "row",
-    "rowCount",
-    "startTime",
-    "endTime",
-    "schedules",
-  ];
-  const blocked = keys.filter((k) => sensitiveKeys.includes(k));
-  if (blocked.length > 0) {
-    throw Object.assign(
-      new Error(
-        `Trạng thái "${policy.status}" khóa trường nhạy cảm: ${blocked.join(", ")}. ${policy.reason}`,
-      ),
-      { status: 403 },
-    );
+  if (
+    !policy.canChangePlace &&
+    keys.some((k) => k === "placeId" || k === "place")
+  ) {
+    throw Object.assign(new Error("Không được đổi địa điểm ở trạng thái này."), {
+      status: 403,
+    });
+  }
+
+  if (
+    !policy.canEditSensitive &&
+    keys.some((k) => k === "startTime" || k === "endTime" || k === "schedules")
+  ) {
+    throw Object.assign(new Error("Không được đổi lịch diễn ở trạng thái này."), {
+      status: 403,
+    });
+  }
+
+  if (
+    !policy.canModifyZones &&
+    !policy.canAddZone &&
+    keys.includes("zones")
+  ) {
+    throw Object.assign(new Error("Không được sửa hạng vé / zone."), {
+      status: 403,
+    });
   }
 
   const allowed = new Set<string>([...MARKETING_FIELDS, "status"]);
+  if (policy.canChangePlace) {
+    allowed.add("placeId");
+    allowed.add("place");
+  }
+  if (policy.canEditSensitive) {
+    allowed.add("startTime");
+    allowed.add("endTime");
+    allowed.add("schedules");
+  }
+  if (policy.canModifyZones || policy.canAddZone) {
+    allowed.add("zones");
+  }
+
   const unknown = keys.filter((k) => !allowed.has(k));
-  if (unknown.length > 0 && !policy.canEditMarketing) {
+  if (unknown.length > 0) {
     throw Object.assign(
       new Error(`Không được sửa: ${unknown.join(", ")}`),
       { status: 403 },
@@ -219,16 +239,30 @@ export function assertCanDeleteEvent(policy: EventEditPolicy): void {
   }
 }
 
-/** Khi open: không giảm totalSeats dưới số vé đã bán; không xóa zone có booking */
+/** Không giảm dưới số vé đã bán; đang bán thì không giảm so với cung hiện tại. */
 export function assertZoneCapacityChange(
   soldCount: number,
   nextTotalSeats: number,
   zoneName?: string,
+  opts?: { currentTotal?: number; canDecreaseSeats?: boolean },
 ): void {
+  const label = zoneName ? ` khu "${zoneName}"` : "";
   if (nextTotalSeats < soldCount) {
     throw Object.assign(
       new Error(
-        `Không giảm số ghế${zoneName ? ` khu "${zoneName}"` : ""} xuống ${nextTotalSeats} — đã bán ${soldCount} vé.`,
+        `Không giảm số ghế${label} xuống ${nextTotalSeats} — đã bán ${soldCount} vé.`,
+      ),
+      { status: 409 },
+    );
+  }
+  if (
+    opts?.canDecreaseSeats === false &&
+    opts.currentTotal != null &&
+    nextTotalSeats < opts.currentTotal
+  ) {
+    throw Object.assign(
+      new Error(
+        `Đang mở bán — không giảm số ghế${label} (hiện ${opts.currentTotal}, chỉ được tăng).`,
       ),
       { status: 409 },
     );

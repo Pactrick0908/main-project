@@ -1,79 +1,180 @@
 import { prisma } from "../lib/prisma.js";
 import { WalletService } from "./wallet.service.js";
 import { TicketService } from "./ticket.service.js";
+import { SolanaService } from "./solana.service.js";
+
+const MONTH_LABELS = [
+  "Th1",
+  "Th2",
+  "Th3",
+  "Th4",
+  "Th5",
+  "Th6",
+  "Th7",
+  "Th8",
+  "Th9",
+  "Th10",
+  "Th11",
+  "Th12",
+];
+
+function buildMonthSeries(
+  rows: Array<{ amount: number; at: Date }>,
+  months = 12,
+) {
+  const now = new Date();
+  const buckets = new Map<string, { label: string; revenue: number }>();
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    buckets.set(key, {
+      label: `${MONTH_LABELS[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`,
+      revenue: 0,
+    });
+  }
+  for (const row of rows) {
+    const at = new Date(row.at);
+    const key = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}`;
+    const bucket = buckets.get(key);
+    if (bucket) bucket.revenue += row.amount;
+  }
+  return [...buckets.entries()].map(([key, v]) => ({ key, ...v }));
+}
+
+function buildYearSeries(
+  rows: Array<{ amount: number; at: Date }>,
+  years = 5,
+) {
+  const nowYear = new Date().getFullYear();
+  const buckets = new Map<number, number>();
+  for (let y = nowYear - (years - 1); y <= nowYear; y++) {
+    buckets.set(y, 0);
+  }
+  for (const row of rows) {
+    const y = new Date(row.at).getFullYear();
+    if (buckets.has(y)) buckets.set(y, (buckets.get(y) ?? 0) + row.amount);
+  }
+  return [...buckets.entries()].map(([year, revenue]) => ({
+    key: String(year),
+    label: String(year),
+    revenue,
+  }));
+}
 
 export class AdminService {
-  static async getDashboard() {
+  static async getDashboard(opts?: {
+    organizerId?: number;
+    eventId?: number;
+    includeWallet?: boolean;
+  }) {
+    const organizerId = opts?.organizerId;
+    const eventId = opts?.eventId;
+    const includeWallet = Boolean(opts?.includeWallet);
+
+    if (eventId) {
+      const ev = await prisma.event.findUnique({
+        where: { id: eventId },
+        select: { id: true, organizerId: true, title: true },
+      });
+      if (!ev) {
+        throw Object.assign(new Error("Không tìm thấy sự kiện"), { status: 404 });
+      }
+      if (organizerId && ev.organizerId !== organizerId) {
+        throw Object.assign(new Error("Không xem được sự kiện này"), {
+          status: 403,
+        });
+      }
+    }
+
+    const ticketScope = {
+      ...(eventId ? { eventId } : {}),
+      ...(organizerId && !eventId ? { event: { organizerId } } : {}),
+    };
+    const orderScope = {
+      status: "PAID" as const,
+      ...(eventId ? { eventId } : {}),
+      ...(organizerId && !eventId ? { event: { organizerId } } : {}),
+    };
+
     const [
       soldTickets,
       checkedIn,
-      revoked,
-      eventsActive,
-      eventsTotal,
-      recentTickets,
-      balance,
       paidOrders,
+      ticketPrices,
+      eventOptions,
+      wallet,
     ] = await Promise.all([
       prisma.ticket.count({
-        where: { status: { in: ["sold", "checked_in", "valid"] } },
-      }),
-      prisma.ticket.count({ where: { status: "checked_in" } }),
-      prisma.ticket.count({ where: { status: "revoked" } }),
-      prisma.event.count({
-        where: { status: { in: ["open", "active", "published"] } },
-      }),
-      prisma.event.count(),
-      prisma.ticket.findMany({
-        where: { status: { in: ["sold", "checked_in", "valid", "revoked"] } },
-        include: {
-          event: true,
-          eventZone: { include: { zone: true } },
-          seat: true,
-          user: true,
+        where: {
+          status: { in: ["sold", "checked_in", "valid"] },
+          ...ticketScope,
         },
-        orderBy: { id: "desc" },
-        take: 8,
       }),
-      prisma.adminBalance.findFirst({ orderBy: { id: "asc" } }),
-      prisma.order.aggregate({
-        where: { status: "PAID" },
-        _sum: { totalAmount: true, adminAmount: true, systemAmount: true },
-        _count: true,
+      prisma.ticket.count({
+        where: { status: "checked_in", ...ticketScope },
       }),
+      prisma.order.findMany({
+        where: orderScope,
+        select: { totalAmount: true, createdAt: true, updatedAt: true },
+      }),
+      prisma.ticket.findMany({
+        where: {
+          status: { in: ["sold", "checked_in", "valid"] },
+          ...ticketScope,
+        },
+        select: {
+          createdAt: true,
+          eventZone: { select: { price: true } },
+        },
+      }),
+      organizerId
+        ? prisma.event.findMany({
+            where: { organizerId },
+            select: { id: true, title: true, status: true },
+            orderBy: { id: "desc" },
+          })
+        : prisma.event.findMany({
+            select: { id: true, title: true, status: true },
+            orderBy: { id: "desc" },
+          }),
+      includeWallet
+        ? SolanaService.getHotWalletStatus().catch(() => null)
+        : Promise.resolve(null),
     ]);
 
-    const ticketRevenue = await prisma.ticket.findMany({
-      where: { status: { in: ["sold", "checked_in", "valid"] } },
-      select: { eventZone: { select: { price: true } } },
-    });
-    const revenueFromTickets = ticketRevenue.reduce(
+    const orderRevenue = paidOrders.reduce(
+      (sum, o) => sum + Number(o.totalAmount),
+      0,
+    );
+    const ticketRevenue = ticketPrices.reduce(
       (sum, t) => sum + Number(t.eventZone.price),
       0,
     );
+    const revenue = orderRevenue > 0 ? orderRevenue : ticketRevenue;
+
+    const seriesSource =
+      paidOrders.length > 0
+        ? paidOrders.map((o) => ({
+            amount: Number(o.totalAmount),
+            at: o.updatedAt ?? o.createdAt,
+          }))
+        : ticketPrices.map((t) => ({
+            amount: Number(t.eventZone.price),
+            at: t.createdAt,
+          }));
 
     return {
+      eventId: eventId ?? null,
       soldTickets,
       checkedIn,
-      revoked,
-      checkInRate: soldTickets ? Math.round((checkedIn / soldTickets) * 100) : 0,
-      eventsActive,
-      eventsTotal,
-      revenue: Number(balance?.totalRevenue ?? revenueFromTickets),
-      systemRevenue: Number(balance?.systemRevenue ?? 0),
-      paidOrders: paidOrders._count,
-      orderRevenue: Number(paidOrders._sum.totalAmount ?? 0),
-      recentTickets: recentTickets.map((t) => ({
-        id: t.id,
-        status: t.status,
-        ownerWallet: t.ownerWallet,
-        checkedInAt: t.checkedInAt,
-        isCheckedIn: Boolean(t.checkedInAt) || t.status === "checked_in",
-        event: { id: t.event.id, title: t.event.title },
-        zoneName: t.eventZone.zone.name,
-        price: Number(t.eventZone.price),
-        ownerName: t.user?.fullName ?? null,
-        ownerEmail: t.user?.email ?? null,
-      })),
+      checkInRate: soldTickets
+        ? Math.round((checkedIn / soldTickets) * 100)
+        : 0,
+      revenue,
+      events: eventOptions,
+      revenueByMonth: buildMonthSeries(seriesSource),
+      revenueByYear: buildYearSeries(seriesSource),
+      wallet,
     };
   }
 

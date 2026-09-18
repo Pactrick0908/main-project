@@ -1,0 +1,54 @@
+# Free single-service deploy: API + Vite frontend on one Render URL
+# Dashboard: https://dashboard.render.com → New → Blueprint → chọn repo này
+services:
+  - type: web
+    name: unihack-ticket
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm ci --prefix frontend && npm run build --prefix frontend && npm ci --prefix backend && npm run build --prefix backend
+    startCommand: npm start --prefix backend
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: SERVER_SALT
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: VITE_CLIENT_ID
+        sync: false
+      - key: CLIENT_URL
+        sync: false
+      - key: PAYOS_CLIENT_ID
+        sync: false
+      - key: PAYOS_API_KEY
+        sync: false
+      - key: PAYOS_CHECKSUM_KEY
+        sync: false
+      - key: PAYOS_WEBHOOK_URL
+        sync: false
+      - key: VIETQR_CLIENT_ID
+        sync: false
+      - key: VIETQR_API_KEY
+        sync: false
+      - key: SOLANA_RPC_URL
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: SERVER_PRIVATE_KEY
+        sync: false

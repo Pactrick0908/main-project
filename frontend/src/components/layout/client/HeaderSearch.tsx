@@ -8,6 +8,7 @@ import {
   Sparkles,
   ArrowRight,
   Loader2,
+  X,
 } from "lucide-react";
 import { eventApi, type EventDto } from "@/api/event.api";
 
@@ -121,6 +122,14 @@ export default function HeaderSearch({
     navigate(q ? `/search?q=${encodeURIComponent(q)}` : "/search");
   };
 
+  const clearSearch = () => {
+    setQuery("");
+    setEvents([]);
+    setArtists([]);
+    setOpen(true);
+    inputRef.current?.focus();
+  };
+
   return (
     <div ref={rootRef} className={`relative ${className}`}>
       <form
@@ -142,13 +151,16 @@ export default function HeaderSearch({
           }}
           onFocus={() => setOpen(true)}
           onClick={() => setOpen(true)}
-          className="h-8 w-full rounded-lg border border-zinc-800 bg-zinc-900/50 pl-8 pr-10 text-xs text-zinc-200 placeholder:text-zinc-500 focus:border-zinc-700 focus:outline-none focus:bg-zinc-900 transition-colors"
+          className="h-8 w-full rounded-lg border border-zinc-800 bg-zinc-900/50 pl-8 pr-8 text-xs text-zinc-200 placeholder:text-zinc-500 focus:border-zinc-700 focus:outline-none focus:bg-zinc-900 transition-colors"
         />
-        {variant === "desktop" && (
-          <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-zinc-800 bg-zinc-950 px-1 text-[9px] font-mono text-zinc-500">
-            ⌘K
-          </kbd>
-        )}
+        <button
+          type="button"
+          onClick={clearSearch}
+          aria-label="Xóa tìm kiếm"
+          className="absolute right-1 top-1/2 z-[1] flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
       </form>
 
       {/* Bảng kết quả — ngay dưới ô search */}

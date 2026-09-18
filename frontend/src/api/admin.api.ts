@@ -49,6 +49,7 @@ export type AdminEventEditPolicy = {
   canChangePrice: boolean;
   canModifyZones: boolean;
   canAddZone: boolean;
+  canDecreaseSeats: boolean;
   canDeleteEvent: boolean;
   canChangeStatus: boolean;
   reason: string;
@@ -71,6 +72,7 @@ export type AdminEvent = {
   title: string;
   description: string | null;
   organizerName?: string | null;
+  organizerId?: number | null;
   organizer?: string;
   bannerUrl: string | null;
   mapUrl?: string | null;
@@ -97,31 +99,44 @@ export type AdminEvent = {
     role?: string;
   }>;
   artist?: string;
+  isFeatured?: boolean;
+};
+
+export type AdminWalletStatus = {
+  configured: boolean;
+  reachable: boolean;
+  address: string | null;
+  solBalance: number;
+  estimatedTickets: number;
+  costPerTicket: number;
+  status: "safe" | "low" | "critical" | "unknown";
+  cluster?: string;
+  explorerUrl?: string | null;
+  error?: string;
+};
+
+export type DashboardEventOption = {
+  id: number;
+  title: string;
+  status: string;
+};
+
+export type RevenuePoint = {
+  key: string;
+  label: string;
+  revenue: number;
 };
 
 export type DashboardStats = {
+  eventId: number | null;
   soldTickets: number;
   checkedIn: number;
-  revoked: number;
   checkInRate: number;
-  eventsActive: number;
-  eventsTotal: number;
   revenue: number;
-  systemRevenue: number;
-  paidOrders: number;
-  orderRevenue: number;
-  recentTickets: Array<{
-    id: number;
-    status: string | null;
-    ownerWallet: string | null;
-    checkedInAt: string | null;
-    isCheckedIn: boolean;
-    event: { id: number; title: string };
-    zoneName: string;
-    price: number;
-    ownerName: string | null;
-    ownerEmail: string | null;
-  }>;
+  events: DashboardEventOption[];
+  revenueByMonth: RevenuePoint[];
+  revenueByYear: RevenuePoint[];
+  wallet?: AdminWalletStatus | null;
 };
 
 async function api<T>(
@@ -167,8 +182,10 @@ export const adminApi = {
     }>("/admin/upload", { method: "POST", body: form });
   },
 
-  dashboard: () =>
-    api<{ success: boolean; data: DashboardStats }>("/admin/dashboard"),
+  dashboard: (eventId?: number) =>
+    api<{ success: boolean; data: DashboardStats }>(
+      `/admin/dashboard${eventId ? `?eventId=${eventId}` : ""}`,
+    ),
 
   listTickets: (q?: string) =>
     api<{ success: boolean; data: { tickets: TicketDto[] } }>(
@@ -330,6 +347,7 @@ export const adminApi = {
     startTime?: string;
     endTime?: string;
     artistIds?: number[];
+    isFeatured?: boolean;
     zones: Array<{
       zoneId?: number;
       name: string;
@@ -355,6 +373,20 @@ export const adminApi = {
       mapUrl: string;
       logoUrl: string;
       status: string;
+      isFeatured: boolean;
+      placeId: number;
+      startTime: string;
+      endTime: string;
+      zones: Array<{
+        eventZoneId?: number;
+        zoneId?: number;
+        name: string;
+        price: number;
+        totalSeats: number;
+        hasSeats?: boolean;
+        rowCount?: number;
+        generateSeats?: boolean;
+      }>;
     }>,
   ) =>
     api<{ success: boolean; data: { event: AdminEvent } }>(`/events/${id}`, {
@@ -364,4 +396,72 @@ export const adminApi = {
 
   deleteEvent: (id: number) =>
     api<{ success: boolean }>(`/events/${id}`, { method: "DELETE" }),
+
+  rbacCatalog: () =>
+    api<{ success: boolean; data: RbacCatalog }>("/admin/rbac/catalog"),
+
+  assignRole: (payload: {
+    userId: number;
+    roleId: number;
+    scopeType: RbacScopeType;
+    scopeId?: number;
+  }) =>
+    api<{ success: boolean; data: { assignment: unknown } }>(
+      "/admin/roles/assign",
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+
+  revokeRole: (payload: {
+    userId: number;
+    roleId: number;
+    scopeType: RbacScopeType;
+    scopeId?: number;
+  }) =>
+    api<{ success: boolean; data: { revoked: boolean; id: number } }>(
+      "/admin/roles/revoke",
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+};
+
+export type RbacScopeType = "GLOBAL" | "ORGANIZER" | "EVENT";
+
+export type RbacCatalog = {
+  roles: Array<{
+    id: number;
+    name: string;
+    code: string;
+    label: string;
+    description: string | null;
+    assignable: boolean;
+    globalOnly: boolean;
+    eventOnly: boolean;
+  }>;
+  users: Array<{
+    id: number;
+    fullName: string;
+    email: string;
+    avatarUrl: string | null;
+    legacyRole: string | null;
+  }>;
+  events: Array<{
+    id: number;
+    title: string;
+    organizerId: number | null;
+    organizerName: string | null;
+    status: string | null;
+  }>;
+  organizers: Array<{ id: number; fullName: string; email: string }>;
+  assignments: Array<{
+    id: number;
+    userId: number;
+    roleId: number;
+    role: string;
+    roleLabel: string;
+    scopeType: RbacScopeType;
+    scopeId: number;
+    createdAt: string;
+    user: { id: number; fullName: string; email: string };
+    event: { id: number; title: string } | null;
+    organizer: { id: number; fullName: string; email: string } | null;
+  }>;
 };

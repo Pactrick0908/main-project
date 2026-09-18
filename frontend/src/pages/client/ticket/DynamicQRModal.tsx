@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { ticketApi, type QrPayload, type TicketDto } from "../../../api/ticket.api";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 
 type Props = {
   ticket: TicketDto;
@@ -100,9 +101,10 @@ export default function DynamicQRModal({ ticket, onClose, onCheckedIn }: Props) 
             <>
               <div className="rounded-2xl bg-white p-4">
                 {loading && !payload ? (
-                  <div className="flex h-56 w-56 items-center justify-center text-sm text-neutral-500">
-                    Đang tạo mã…
-                  </div>
+                  <LoadingSpinner
+                    label="Đang tạo mã…"
+                    className="h-56 w-56 min-h-0"
+                  />
                 ) : (
                   <QRCodeSVG value={qrValue} size={224} level="M" includeMargin={false} />
                 )}

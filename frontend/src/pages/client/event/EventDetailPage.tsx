@@ -13,12 +13,12 @@ import {
   type DetailedEvent,
   type EventArtist,
 } from "@/data/events.data";
-import { getResaleTicketsByEventId } from "@/pages/client/market/marketplace.data";
+import { listingToTicket, marketplaceApi } from "@/api/marketplace.api";
+import type { MarketplaceTicket } from "@/pages/client/market/marketplace.data";
 import { useAuth } from "@/context/AuthContext";
 import { ticketApi } from "@/api/ticket.api";
 import { eventApi } from "@/api/event.api";
 import VietQRModal from "./VietQRModal";
-import PurchaseSuccessModal from "./PurchaseSuccessModal";
 import SeatSelectionBoard, {
   getZoneSeatConfig,
   type ZoneTabInfo,
@@ -26,6 +26,7 @@ import SeatSelectionBoard, {
 import StadiumOverviewMap from "./StadiumOverviewMap";
 import ZoneTicketSelector from "./ZoneTicketSelector";
 import { toast } from "@/lib/toast";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 
 export default function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -35,7 +36,7 @@ export default function EventDetailPage() {
   const eventId = id ? parseInt(id, 10) : 1;
   const initialEvent = EVENTS_DATA[eventId] || EVENTS_DATA[1];
   const [event, setEvent] = useState<DetailedEvent>(initialEvent);
-  const [, setIsLoadingEvent] = useState(false);
+  const [isLoadingEvent, setIsLoadingEvent] = useState(true);
 
   // Số lượng vé cho từng zone: { [zoneId]: quantity }
   const [selectedQuantities, setSelectedQuantities] = useState<
@@ -70,6 +71,12 @@ export default function EventDetailPage() {
       .then((res) => {
         if (isMounted && res.data?.event) {
           const dbEvent = res.data.event as any;
+          const st = String(dbEvent.status || "").toLowerCase();
+          if (st === "draft" || st === "ended" || st === "completed") {
+            toast.error("Sự kiện này chưa mở hoặc đã kết thúc.");
+            navigate("/");
+            return;
+          }
           const fallback = EVENTS_DATA[eventId] || EVENTS_DATA[1];
 
           // Ghép dữ liệu DB với fallback UI (banner, artist…)
@@ -174,9 +181,23 @@ export default function EventDetailPage() {
     document.body.scrollTop = 0;
   }, [eventId]);
 
-  // Danh sách vé pass lại từ cộng đồng
-  const resaleTickets = useMemo(() => {
-    return getResaleTicketsByEventId(eventId);
+  const [resaleTickets, setResaleTickets] = useState<MarketplaceTicket[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    marketplaceApi
+      .listListings({ eventId })
+      .then((res) => {
+        if (!cancelled) {
+          setResaleTickets((res.data.listings ?? []).map(listingToTicket));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setResaleTickets([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [eventId]);
 
   // Modals state
@@ -187,14 +208,6 @@ export default function EventDetailPage() {
     totalAmount: number;
     checkoutUrl: string;
     qrCode: string;
-  } | null>(null);
-
-  const [successModal, setSuccessModal] = useState(false);
-  const [createdTicketInfo, setCreatedTicketInfo] = useState<{
-    zone: string;
-    qty: number;
-    total: number;
-    seats?: string[];
   } | null>(null);
 
   const formatVND = (amount: number) =>
@@ -436,6 +449,14 @@ export default function EventDetailPage() {
       if (res?.data) {
         setOrderInfo(res.data);
         setQrModal(true);
+        try {
+          localStorage.setItem(
+            "pendingPayOSOrderCode",
+            String(res.data.orderCode),
+          );
+        } catch {
+          /* ignore */
+        }
         startPolling(res.data.orderCode);
       }
     } catch (err: any) {
@@ -447,61 +468,66 @@ export default function EventDetailPage() {
     }
   };
 
-  const showPurchaseSuccess = (ticketCount?: number) => {
-    const zonesBought = event.zones.filter(
-      (z) => (selectedQuantities[z.id] || 0) > 0,
-    );
-    const zoneNames = zonesBought.map((z) => z.name).join(", ");
-    setCreatedTicketInfo({
-      zone: zoneNames || "Vé",
-      qty: ticketCount ?? totalTickets,
-      total: totalPriceVND,
-      seats: allSelectedSeats.length > 0 ? allSelectedSeats : undefined,
-    });
-    setSuccessModal(true);
+  const fulfillAfterPayOSPaid = async (orderCode: number) => {
+    await ticketApi.completePayOSOrder(orderCode);
+    for (let i = 0; i < 10; i++) {
+      const res = await ticketApi.getOrderStatus(orderCode);
+      if (res.data?.status === "PAID") return res.data;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    return null;
   };
 
-  // Polling trạng thái thanh toán từ PayOS
+  const finishPaidOrder = (orderCode: number) => {
+    try {
+      localStorage.removeItem("pendingPayOSOrderCode");
+    } catch {
+      /* ignore */
+    }
+    setQrModal(false);
+    navigate(`/my-tickets?orderCode=${orderCode}&status=PAID`);
+  };
+
+  // Poll PayOS; chỉ gọi webhook khi PayOS báo đã nhận tiền
   const startPolling = (orderCode: number) => {
-    const interval = setInterval(async () => {
+    let stopped = false;
+    let inFlight = false;
+    const poll = async () => {
+      if (stopped || inFlight) return stopped;
+      inFlight = true;
       try {
-        const res = await ticketApi.getOrderStatus(orderCode);
-        if (res.data?.status === "PAID") {
-          clearInterval(interval);
-          setQrModal(false);
-          showPurchaseSuccess(res.data.ticketIds?.length);
+        const payos = await ticketApi.getPayOSPaymentStatus(orderCode);
+        if (payos.data?.paid) {
+          const paid = await fulfillAfterPayOSPaid(orderCode);
+          stopped = true;
+          finishPaidOrder(orderCode);
+          return true;
         }
       } catch {
-        // Tiếp tục poll
+        // PayOS chưa PAID hoặc lỗi mạng — thử lại
+      } finally {
+        inFlight = false;
       }
+      return false;
+    };
+
+    void poll();
+    const interval = setInterval(async () => {
+      const done = await poll();
+      if (done) clearInterval(interval);
     }, 3000);
 
-    setTimeout(() => clearInterval(interval), 300000);
+    setTimeout(() => {
+      stopped = true;
+      clearInterval(interval);
+    }, 300000);
   };
 
   const handleSimulatePayment = async () => {
     if (!orderInfo) return;
     try {
-      await fetch("/api/v1/webhook/payos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code: "00",
-          data: { orderCode: orderInfo.orderCode, code: "00" },
-        }),
-      });
-      // Đợi fulfill rồi lấy status
-      for (let i = 0; i < 10; i++) {
-        await new Promise((r) => setTimeout(r, 400));
-        const res = await ticketApi.getOrderStatus(orderInfo.orderCode);
-        if (res.data?.status === "PAID") {
-          setQrModal(false);
-          showPurchaseSuccess(res.data.ticketIds?.length);
-          return;
-        }
-      }
-      setQrModal(false);
-      showPurchaseSuccess();
+      await fulfillAfterPayOSPaid(orderInfo.orderCode);
+      finishPaidOrder(orderInfo.orderCode);
     } catch (e) {
       toast.error(
         e instanceof Error
@@ -510,6 +536,16 @@ export default function EventDetailPage() {
       );
     }
   };
+
+  if (isLoadingEvent) {
+    return (
+      <LoadingSpinner
+        label="Đang tải sự kiện…"
+        size="lg"
+        className="min-h-[70vh]"
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#090A0F] text-zinc-100 py-6 px-4 sm:px-6 lg:px-8">
@@ -549,7 +585,7 @@ export default function EventDetailPage() {
               <div className="text-zinc-400 text-xs mt-0.5">
                 Giá chỉ từ{" "}
                 <span className="font-extrabold text-emerald-400">
-                  {resaleTickets[0].passPrice}
+                  {resaleTickets[0]?.passPrice}
                 </span>{" "}
                 · Bảo chứng 100% qua hệ thống ký quỹ trung gian
               </div>
@@ -686,15 +722,6 @@ export default function EventDetailPage() {
         orderInfo={orderInfo}
         onClose={() => setQrModal(false)}
         onSimulateSuccess={handleSimulatePayment}
-        formatVND={formatVND}
-      />
-
-      {/* MODAL THÔNG BÁO MUA VÉ THÀNH CÔNG */}
-      <PurchaseSuccessModal
-        isOpen={successModal}
-        eventTitle={event.title}
-        ticketInfo={createdTicketInfo}
-        onClose={() => setSuccessModal(false)}
         formatVND={formatVND}
       />
     </div>

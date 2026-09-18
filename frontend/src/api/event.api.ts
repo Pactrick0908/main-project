@@ -46,6 +46,7 @@ export interface EventDto extends DetailedEvent {
     email: string;
     avatarUrl?: string | null;
   };
+  isFeatured?: boolean;
 }
 
 async function api<T>(
@@ -101,10 +102,15 @@ export const eventApi = {
   /**
    * Lấy danh sách sự kiện từ backend DB
    */
-  listEvents: async (params?: { status?: string; search?: string }) => {
+  listEvents: async (params?: {
+    status?: string;
+    search?: string;
+    featured?: boolean;
+  }) => {
     const query = new URLSearchParams();
     if (params?.status) query.set("status", params.status);
     if (params?.search) query.set("search", params.search);
+    if (params?.featured) query.set("featured", "1");
     const qs = query.toString() ? `?${query.toString()}` : "";
 
     return api<{ success: boolean; data: { events: EventDto[] } }>(

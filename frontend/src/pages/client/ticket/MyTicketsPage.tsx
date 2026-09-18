@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Wallet, RefreshCw, Loader2 } from "lucide-react";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import DynamicQRModal from "@/pages/client/ticket/DynamicQRModal";
 import { clearSession, getStoredUser, getToken } from "@/api/auth.api";
 import { ticketApi, type TicketDto } from "@/api/ticket.api";
@@ -15,10 +16,12 @@ const formatVND = (amount: number) =>
 
 export default function MyTicketsPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const user = getStoredUser();
   const [tickets, setTickets] = useState<TicketDto[]>([]);
   const [walletSynced, setWalletSynced] = useState(false);
   const [syncing, setSyncing] = useState(true);
+  const [confirmingPayment, setConfirmingPayment] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<TicketDto | null>(null);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
@@ -51,9 +54,91 @@ export default function MyTicketsPage() {
     }
   }, [navigate, user?.walletAddress]);
 
+  const urlOrderCode = searchParams.get("orderCode");
+  const [storedOrderCode, setStoredOrderCode] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem("pendingPayOSOrderCode");
+    } catch {
+      return null;
+    }
+  });
+  const orderCodeParam = urlOrderCode || storedOrderCode;
+  const cancelParam = searchParams.get("cancel");
+  const statusParam = searchParams.get("status");
+  const payosCodeParam = searchParams.get("code");
+  const payosRedirectPaid =
+    statusParam === "PAID" || payosCodeParam === "00";
+
   useEffect(() => {
-    void syncFromWallet();
-  }, [syncFromWallet]);
+    const cancelled =
+      cancelParam === "true" ||
+      statusParam === "CANCELLED" ||
+      statusParam === "cancelled";
+
+    if (!orderCodeParam || cancelled) {
+      void syncFromWallet();
+      return;
+    }
+
+    let stopped = false;
+    const confirmPayOSReturn = async () => {
+      setConfirmingPayment(true);
+      setSyncing(true);
+      setError(null);
+      try {
+        for (let i = 0; i < 20; i++) {
+          if (stopped) return;
+          const payosConfirmed =
+            payosRedirectPaid ||
+            (await ticketApi.getPayOSPaymentStatus(orderCodeParam)).data
+              ?.paid;
+          if (payosConfirmed) {
+            await ticketApi.completePayOSOrder(orderCodeParam);
+            const res = await ticketApi.getOrderStatus(orderCodeParam);
+            if (res.data?.status === "PAID") {
+              try {
+                localStorage.removeItem("pendingPayOSOrderCode");
+              } catch {
+                /* ignore */
+              }
+              setStoredOrderCode(null);
+              await syncFromWallet();
+              setConfirmingPayment(false);
+              setSearchParams({}, { replace: true });
+              return;
+            }
+          }
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+        await syncFromWallet();
+        setError(
+          "Chưa nhận được xác nhận chuyển khoản từ PayOS. Nếu đã thanh toán, bấm Làm mới ví.",
+        );
+      } catch (err: any) {
+        const message =
+          err?.message ?? "Không xác nhận được thanh toán PayOS";
+        await syncFromWallet();
+        setError(message);
+      } finally {
+        if (!stopped) {
+          setConfirmingPayment(false);
+          setSyncing(false);
+        }
+      }
+    };
+
+    void confirmPayOSReturn();
+    return () => {
+      stopped = true;
+    };
+  }, [
+    orderCodeParam,
+    cancelParam,
+    statusParam,
+    payosRedirectPaid,
+    setSearchParams,
+    syncFromWallet,
+  ]);
 
   const handleLogout = () => {
     clearSession();
@@ -83,7 +168,9 @@ export default function MyTicketsPage() {
                   {shortWallet}
                 </p>
                 <p className="mt-1 text-[11px] text-white/40">
-                  {syncing
+                  {confirmingPayment
+                    ? "Đang xác nhận thanh toán PayOS và cấp vé vào ví…"
+                    : syncing
                     ? "Đang mở ví và lấy vé…"
                     : walletSynced
                       ? `Đã đồng bộ · ${tickets.length} vé trong ví${
@@ -97,7 +184,27 @@ export default function MyTicketsPage() {
             </div>
             <button
               type="button"
-              onClick={() => void syncFromWallet()}
+              onClick={() => {
+                void (async () => {
+                  if (
+                    orderCodeParam &&
+                    cancelParam !== "true" &&
+                    statusParam !== "CANCELLED" &&
+                    statusParam !== "cancelled"
+                  ) {
+                    try {
+                      const payos =
+                        await ticketApi.getPayOSPaymentStatus(orderCodeParam);
+                      if (payos.data?.paid || payosRedirectPaid) {
+                        await ticketApi.completePayOSOrder(orderCodeParam);
+                      }
+                    } catch {
+                      // vẫn đọc ví
+                    }
+                  }
+                  await syncFromWallet();
+                })();
+              }}
               disabled={syncing}
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#F97316] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#ea6d0e] disabled:opacity-60"
             >
@@ -111,10 +218,14 @@ export default function MyTicketsPage() {
           </div>
         </section>
 
-        {syncing && (
-          <p className="text-center text-sm text-white/50">
-            Đang mở ví và kéo vé xuống…
+        {confirmingPayment && (
+          <p className="text-center text-sm text-emerald-300/80">
+            Đang xác nhận thanh toán PayOS và cấp vé vào ví…
           </p>
+        )}
+
+        {syncing && !confirmingPayment && (
+          <LoadingSpinner label="Đang mở ví và kéo vé xuống…" />
         )}
 
         {error && (
@@ -123,7 +234,7 @@ export default function MyTicketsPage() {
           </div>
         )}
 
-        {walletSynced && !syncing && tickets.length === 0 && (
+        {walletSynced && !syncing && !confirmingPayment && tickets.length === 0 && (
           <div className="rounded-2xl border border-dashed border-white/15 px-6 py-14 text-center">
             <p className="text-lg font-medium text-white/70">Ví chưa có vé</p>
             <p className="mt-1 text-sm text-white/40">

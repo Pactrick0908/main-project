@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ticketApi, type TicketDto } from "@/api/ticket.api";
+import { marketplaceApi } from "@/api/marketplace.api";
 import { useAuth } from "@/context/AuthContext";
 import { Link } from "react-router-dom";
 import { toast } from "@/lib/toast";
@@ -65,9 +66,14 @@ export default function PostTicketModal({
       ticketApi
         .listMine()
         .then((res) => {
-          const validTickets = (res.data?.tickets || []).filter((t) => !t.isCheckedIn);
+          const validTickets = (res.data?.tickets || []).filter(
+            (t) =>
+              !t.isCheckedIn &&
+              t.status !== "listed" &&
+              t.status !== "checked_in",
+          );
           setMyTickets(validTickets);
-          if (validTickets.length > 0) {
+          if (validTickets.length > 0 && validTickets[0]) {
             setSelectedTicketId(validTickets[0].id);
             setPassPrice(validTickets[0].price.toString());
           }
@@ -79,7 +85,7 @@ export default function PostTicketModal({
 
   const selectedTicket = myTickets.find((t) => t.id === selectedTicketId);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTicketId) {
       toast.error("Vui lòng chọn vé bạn muốn đăng bán!");
@@ -94,16 +100,34 @@ export default function PostTicketModal({
       return;
     }
 
+    const price = Number(passPrice);
+    if (!Number.isFinite(price) || price < 1000) {
+      toast.error("Giá pass tối thiểu 1.000đ");
+      return;
+    }
+
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      await marketplaceApi.createListing({
+        ticketId: selectedTicketId,
+        price,
+        bankCode: selectedBank.code,
+        bankName: selectedBank.name,
+        bankAccountNo: accountNumber.trim(),
+        bankAccountName: accountName.trim(),
+        note: sellerNote.trim() || undefined,
+      });
       setListSuccess(true);
-      setTimeout(() => {
+      onSuccess();
+      window.setTimeout(() => {
         setListSuccess(false);
-        onSuccess();
         onClose();
       }, 2000);
-    }, 800);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Không đăng bán được vé");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

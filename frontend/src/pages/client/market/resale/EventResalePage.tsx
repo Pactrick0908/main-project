@@ -1,11 +1,7 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import {
-  getResaleTicketsByEventId,
-  MARKETPLACE_TICKETS,
-  type MarketplaceTicket,
-} from "../marketplace.data";
-import { EVENTS_DATA } from "@/data/events.data";
+import { type MarketplaceTicket } from "../marketplace.data";
+import { listingToTicket, marketplaceApi } from "@/api/marketplace.api";
 import { eventApi } from "@/api/event.api";
 import EventResaleHero from "./EventResaleHero";
 import EventResaleFilter from "./EventResaleFilter";
@@ -14,20 +10,50 @@ import BuyP2PModal from "../BuyP2PModal";
 import PostTicketModal from "../PostTicketModal";
 import { AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 
 export default function EventResalePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const eventId = id ? parseInt(id, 10) : 1;
 
-  // Thông tin concert (tải từ DB, fallback mock)
-  const [officialEvent, setOfficialEvent] = useState<any>(() => EVENTS_DATA[eventId] || EVENTS_DATA[1]);
+  const [officialEvent, setOfficialEvent] = useState<{
+    title?: string;
+    artist?: string;
+    bannerImage?: string;
+    bannerUrl?: string | null;
+    date?: string;
+    venue?: string;
+    category?: string;
+    artists?: Array<{ name: string; stageName?: string | null }>;
+    place?: { name: string; city: string };
+    schedules?: Array<{ startTime: string }>;
+  } | null>(null);
+  const [eventTickets, setEventTickets] = useState<MarketplaceTicket[]>([]);
+  const [loadingOffers, setLoadingOffers] = useState(true);
+
+  const loadOffers = useCallback(async () => {
+    try {
+      const res = await marketplaceApi.listListings({ eventId });
+      setEventTickets((res.data.listings ?? []).map(listingToTicket));
+    } catch {
+      setEventTickets([]);
+    } finally {
+      setLoadingOffers(false);
+    }
+  }, [eventId]);
 
   useEffect(() => {
     let isMounted = true;
-    eventApi.getEventById(eventId)
+    eventApi
+      .getEventById(eventId)
       .then((res) => {
         if (isMounted && res.data?.event) {
+          const st = String(res.data.event.status || "").toLowerCase();
+          if (st === "draft" || st === "ended" || st === "completed") {
+            navigate("/");
+            return;
+          }
           setOfficialEvent(res.data.event);
         }
       })
@@ -35,7 +61,12 @@ export default function EventResalePage() {
     return () => {
       isMounted = false;
     };
-  }, [eventId]);
+  }, [eventId, navigate]);
+
+  useEffect(() => {
+    setLoadingOffers(true);
+    void loadOffers();
+  }, [loadOffers]);
 
   // Tự động cuộn lên đầu trang khi mở hoặc đổi concert
   useEffect(() => {
@@ -44,18 +75,31 @@ export default function EventResalePage() {
     document.body.scrollTop = 0;
   }, [eventId]);
 
-  // Lấy danh sách người pass cho event này
-  const eventTickets = useMemo(() => {
-    return getResaleTicketsByEventId(eventId);
-  }, [eventId]);
   const firstTicket = eventTickets[0];
 
   const eventTitle =
     officialEvent?.title || firstTicket?.title || "Sự kiện âm nhạc";
-  const eventArtist = officialEvent?.artist || firstTicket?.artist || "";
-  const eventBanner = officialEvent?.bannerImage || firstTicket?.image || "";
-  const eventDate = officialEvent?.date || firstTicket?.date || "";
-  const eventLocation = officialEvent?.venue || firstTicket?.location || "";
+  const eventArtist =
+    officialEvent?.artists
+      ?.map((a) => a.stageName || a.name)
+      .filter(Boolean)
+      .join(", ") ||
+    officialEvent?.artist ||
+    firstTicket?.artist ||
+    "";
+  const eventBanner =
+    officialEvent?.bannerUrl ||
+    officialEvent?.bannerImage ||
+    firstTicket?.image ||
+    "";
+  const eventDate =
+    officialEvent?.schedules?.[0]?.startTime
+      ? new Date(officialEvent.schedules[0].startTime).toLocaleString("vi-VN")
+      : officialEvent?.date || firstTicket?.date || "";
+  const eventLocation =
+    officialEvent?.place
+      ? `${officialEvent.place.name}, ${officialEvent.place.city}`
+      : officialEvent?.venue || firstTicket?.location || "";
   const eventCategory =
     officialEvent?.category || firstTicket?.category || "Concert";
 
@@ -99,7 +143,6 @@ export default function EventResalePage() {
   const [selectedTicket, setSelectedTicket] =
     useState<MarketplaceTicket | null>(null);
   const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
-  const [buySuccess, setBuySuccess] = useState(false);
   const [isPostModalOpen, setIsPostModalOpen] = useState(false);
 
   // Filtered ticket list
@@ -125,16 +168,6 @@ export default function EventResalePage() {
   const handleOpenBuy = (ticket: MarketplaceTicket) => {
     setSelectedTicket(ticket);
     setIsBuyModalOpen(true);
-    setBuySuccess(false);
-  };
-
-  const handleConfirmBuy = () => {
-    setBuySuccess(true);
-    setTimeout(() => {
-      setIsBuyModalOpen(false);
-      setBuySuccess(false);
-      setSelectedTicket(null);
-    }, 1800);
   };
 
   return (
@@ -170,7 +203,12 @@ export default function EventResalePage() {
         />
 
         {/* 3. Offer Cards Grid */}
-        {filteredOffers.length === 0 ? (
+        {loadingOffers ? (
+          <LoadingSpinner
+            label="Đang tải vé pass…"
+            className="min-h-[16rem]"
+          />
+        ) : filteredOffers.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-zinc-800 bg-[#12131A]/60 py-16 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-800 text-zinc-400 mb-3">
               <AlertCircle className="h-6 w-6" />
@@ -210,14 +248,13 @@ export default function EventResalePage() {
           ticket={selectedTicket}
           isOpen={isBuyModalOpen}
           onClose={() => setIsBuyModalOpen(false)}
-          onConfirmBuy={handleConfirmBuy}
-          isSuccess={buySuccess}
+          onPurchased={() => void loadOffers()}
         />
 
         <PostTicketModal
           isOpen={isPostModalOpen}
           onClose={() => setIsPostModalOpen(false)}
-          onSuccess={() => {}}
+          onSuccess={() => void loadOffers()}
         />
       </div>
     </div>

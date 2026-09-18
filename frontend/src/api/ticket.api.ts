@@ -99,6 +99,51 @@ export const ticketApi = {
       body: JSON.stringify(params),
     }),
 
+  /**
+   * Hỏi PayOS đã nhận tiền chưa. Không cấp vé.
+   */
+  getPayOSPaymentStatus: (orderCode: number | string) =>
+    api<{
+      success: boolean;
+      data: {
+        orderCode: string;
+        orderStatus: "PENDING" | "PAID" | "CANCELLED";
+        payosStatus: string;
+        paid: boolean;
+        amountPaid?: number;
+        error?: string;
+      };
+    }>(`/orders/${orderCode}/payos`, { method: "GET" }),
+
+  /**
+   * Cấp vé giống nút giả lập: POST webhook PayOS (code=00).
+   * Chỉ gọi SAU khi PayOS xác nhận đã nhận tiền.
+   */
+  completePayOSOrder: async (orderCode: number | string) => {
+    const res = await fetch(`${API_BASE}/webhook/payos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        code: "00",
+        desc: "success",
+        success: true,
+        data: { orderCode: Number(orderCode), code: "00" },
+      }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw Object.assign(
+        new Error(body.message || "Không cấp được vé sau thanh toán"),
+        { status: res.status },
+      );
+    }
+    return body as {
+      success: boolean;
+      message?: string;
+      data?: { ticketIds?: number[] };
+    };
+  },
+
   /** Kiểm tra trạng thái đơn hàng theo orderCode */
   getOrderStatus: (orderCode: number | string) =>
     api<{

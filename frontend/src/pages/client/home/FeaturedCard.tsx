@@ -33,7 +33,7 @@ function FeaturedCard({ event }: { event: FeaturedEvent }) {
           <div className="absolute top-3 left-3">
             <span
               className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${
-                event.tag === "Đang hot"
+                event.tag === "Đang hot" || event.tag === "Nổi bật"
                   ? "bg-[#F97316] text-white"
                   : event.tag === "Hết vé"
                     ? "bg-zinc-700 text-zinc-200"

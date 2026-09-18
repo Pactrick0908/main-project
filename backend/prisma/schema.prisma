@@ -12,7 +12,8 @@ model Role {
   description String?  @db.VarChar(255)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(6)
 
-  users User[]
+  users          User[]
+  userRoleScopes UserRoleScope[]
 
   @@map("roles")
 }
@@ -27,12 +28,45 @@ model User {
   roleId        Int?     @default(1) @map("role_id")
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
 
-  role            Role?    @relation(fields: [roleId], references: [id], onDelete: SetNull)
-  organizedEvents Event[]
-  tickets         Ticket[]
-  orders          Order[]
+  role              Role?            @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  organizedEvents   Event[]
+  tickets           Ticket[]
+  orders            Order[]
+  roleScopes        UserRoleScope[]  @relation("UserRoleScopes")
+  grantedRoleScopes UserRoleScope[]  @relation("GrantedBy")
+  resaleListings    ResaleListing[]
+  resaleSold        ResaleTrade[]    @relation("ResaleSeller")
+  resaleBought      ResaleTrade[]    @relation("ResaleBuyer")
+  refundLedgers     RefundLedger[]
 
   @@map("users")
+}
+
+enum ScopeType {
+  GLOBAL
+  ORGANIZER
+  EVENT
+}
+
+/** Role gắn kèm phạm vi: toàn sàn / ban tổ chức / 1 sự kiện */
+model UserRoleScope {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  roleId    Int       @map("role_id")
+  scopeType ScopeType @map("scope_type")
+  /** GLOBAL = 0; ORGANIZER = users.id BTC; EVENT = events.id */
+  scopeId   Int       @default(0) @map("scope_id")
+  grantedBy Int?      @map("granted_by")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+
+  user    User  @relation("UserRoleScopes", fields: [userId], references: [id], onDelete: Cascade)
+  role    Role  @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  granter User? @relation("GrantedBy", fields: [grantedBy], references: [id], onDelete: SetNull)
+
+  @@unique([userId, roleId, scopeType, scopeId])
+  @@index([userId])
+  @@index([scopeType, scopeId])
+  @@map("user_role_scopes")
 }
 
 model Place {
@@ -87,6 +121,8 @@ model Event {
   logoUrl       String?  @map("logo_url") @db.VarChar(500)
   ticketId      String?  @map("ticket_id") @db.VarChar(100)
   status        String?  @default("draft") @db.VarChar(20) //draft upcoming open ended
+  /** Bật thì hiện trên block Sự kiện nổi bật trang chủ */
+  isFeatured    Boolean  @default(false) @map("is_featured")
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
 
   organizer    User?           @relation(fields: [organizerId], references: [id], onDelete: SetNull)
@@ -94,8 +130,9 @@ model Event {
   schedules    EventSchedule[]
   eventZones   EventZone[]
   tickets      Ticket[]
-  eventArtists EventArtist[]
-  orders       Order[]
+  eventArtists   EventArtist[]
+  orders         Order[]
+  resaleListings ResaleListing[]
 
   @@map("events")
 }
@@ -173,9 +210,14 @@ model Ticket {
   event     Event         @relation(fields: [eventId], references: [id], onDelete: Restrict)
   seat      Seat?         @relation(fields: [seatId], references: [id], onDelete: Restrict)
   eventZone EventZone     @relation(fields: [eventZoneId], references: [id], onDelete: Restrict)
-  user      User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
-  nonces    TicketNonce[]
-  orders    Order[]
+  user            User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  originalOrderId Int?            @map("original_order_id")
+  originalOrder   Order?          @relation("TicketOriginalOrder", fields: [originalOrderId], references: [id], onDelete: SetNull)
+  nonces          TicketNonce[]
+  orders          Order[]
+  listings        ResaleListing[]
+  trades          ResaleTrade[]
+  refundLedgers   RefundLedger[]
 
   // Khóa logic chống trùng ghế cho cùng một sự kiện
   @@unique([eventId, seatId])
@@ -226,14 +268,115 @@ model Order {
   createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamp(6)
 
-  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ticket Ticket? @relation(fields: [ticketId], references: [id], onDelete: SetNull)
-  event  Event?  @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  resaleState                    String? @map("resale_state") @db.VarChar(30)
+  primaryRefundStatus            String? @map("primary_refund_status") @db.VarChar(40)
+  primaryRefundBeneficiaryUserId Int?    @map("primary_refund_beneficiary_user_id")
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticket          Ticket?  @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  event           Event?   @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  originalTickets Ticket[] @relation("TicketOriginalOrder")
 
   @@index([orderCode])
   @@index([userId])
   @@index([eventId])
   @@map("orders")
+}
+
+enum ResaleListingStatus {
+  ACTIVE
+  RESERVED
+  SOLD
+  CANCELLED
+}
+
+enum ResaleEscrowStatus {
+  PENDING_PAYMENT
+  HELD
+  RELEASED
+  REFUNDED
+  CANCELLED
+}
+
+enum RefundLedgerKind {
+  P2P_RELEASE
+  P2P_REFUND
+  PRIMARY_REFUND
+}
+
+model ResaleListing {
+  id              Int                 @id @default(autoincrement())
+  ticketId        Int                 @map("ticket_id")
+  sellerId        Int                 @map("seller_id")
+  eventId         Int                 @map("event_id")
+  price           Decimal             @db.Decimal(15, 2)
+  facePrice       Decimal             @map("face_price") @db.Decimal(15, 2)
+  bankCode        String              @map("bank_code") @db.VarChar(20)
+  bankName        String              @map("bank_name") @db.VarChar(100)
+  bankAccountNo   String              @map("bank_account_no") @db.VarChar(50)
+  bankAccountName String              @map("bank_account_name") @db.VarChar(150)
+  note            String?
+  status          ResaleListingStatus @default(ACTIVE)
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime            @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  ticket Ticket        @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  seller User          @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+  event  Event         @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  trades ResaleTrade[]
+
+  @@index([status, eventId])
+  @@index([ticketId])
+  @@index([sellerId])
+  @@map("resale_listings")
+}
+
+model ResaleTrade {
+  id             Int                @id @default(autoincrement())
+  listingId      Int                @map("listing_id")
+  ticketId       Int                @map("ticket_id")
+  sellerId       Int                @map("seller_id")
+  buyerId        Int                @map("buyer_id")
+  amount         Decimal            @db.Decimal(15, 2)
+  payosOrderCode BigInt             @unique @map("payos_order_code")
+  paymentLinkId  String?            @map("payment_link_id") @db.VarChar(100)
+  escrowStatus   ResaleEscrowStatus @default(PENDING_PAYMENT) @map("escrow_status")
+  releaseReason  String?            @map("release_reason") @db.VarChar(40)
+  paidAt         DateTime?          @map("paid_at") @db.Timestamp(6)
+  releasedAt     DateTime?          @map("released_at") @db.Timestamp(6)
+  refundedAt     DateTime?          @map("refunded_at") @db.Timestamp(6)
+  expiresAt      DateTime           @map("expires_at") @db.Timestamp(6)
+  solTxSignature String?            @map("sol_tx_signature") @db.VarChar(128)
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  listing ResaleListing @relation(fields: [listingId], references: [id], onDelete: Restrict)
+  ticket  Ticket        @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  seller  User          @relation("ResaleSeller", fields: [sellerId], references: [id], onDelete: Restrict)
+  buyer   User          @relation("ResaleBuyer", fields: [buyerId], references: [id], onDelete: Restrict)
+
+  @@index([ticketId])
+  @@index([buyerId])
+  @@index([escrowStatus])
+  @@map("resale_trades")
+}
+
+model RefundLedger {
+  id        Int              @id @default(autoincrement())
+  ticketId  Int              @map("ticket_id")
+  userId    Int              @map("user_id")
+  kind      RefundLedgerKind
+  amount    Decimal          @db.Decimal(15, 2)
+  refType   String           @map("ref_type") @db.VarChar(40)
+  refId     Int              @map("ref_id")
+  note      String?
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamp(6)
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, kind, userId])
+  @@map("refund_ledger")
 }
 
 model AdminBalance {

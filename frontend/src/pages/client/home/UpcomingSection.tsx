@@ -4,24 +4,10 @@ import { Link } from "react-router-dom";
 import UpcomingCard from "./UpcomingCard";
 import type { UpcomingEvent } from "./UpcomingCard";
 import { eventApi } from "@/api/event.api";
-
-const ALL_CATEGORIES = [
-  "Tất cả",
-  "V-Pop",
-  "K-Pop",
-  "Rap",
-  "Indie",
-  "EDM",
-  "Concert",
-];
-
-interface DisplayUpcomingEvent extends UpcomingEvent {
-  category?: string;
-}
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 
 function UpcomingSection() {
-  const [active, setActive] = useState("Tất cả");
-  const [eventsList, setEventsList] = useState<DisplayUpcomingEvent[]>([]);
+  const [eventsList, setEventsList] = useState<UpcomingEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Tải danh sách sự kiện từ DB
@@ -30,10 +16,10 @@ function UpcomingSection() {
     setLoading(true);
 
     eventApi
-      .listEvents()
+      .listEvents({ status: "open" })
       .then((res) => {
-        if (isMounted && res.data?.events?.length > 0) {
-          const dbEvents: DisplayUpcomingEvent[] = res.data.events.map(
+        if (isMounted) {
+          const dbEvents: UpcomingEvent[] = (res.data?.events ?? []).map(
             (e: any) => ({
               id: e.id,
               title: e.title,
@@ -45,12 +31,10 @@ function UpcomingSection() {
               schedules: e.schedules || [],
               zones: e.zones || [],
               soldTickets: e.soldTickets || 0,
-              place: e.place, // Chứa { name, address, city }
+              place: e.place,
               passCount: e.passCount || 0,
-              category: e.category || "V-Pop",
             }),
           );
-
           setEventsList(dbEvents);
         }
       })
@@ -66,17 +50,12 @@ function UpcomingSection() {
     };
   }, []);
 
-  const filtered =
-    active === "Tất cả"
-      ? eventsList
-      : eventsList.filter((e) => e.category === active);
-
   return (
     <section id="events" className="border-b border-zinc-800/60">
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
         {/* HEADER */}
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-xl font-bold text-white">Sự kiện sắp tới</h2>
+          <h2 className="text-xl font-bold text-white">Đang mở bán</h2>
           <Link
             to="/marketplace"
             className="inline-flex items-center gap-1.5 text-sm text-zinc-400 hover:text-white transition-colors"
@@ -87,36 +66,15 @@ function UpcomingSection() {
           </Link>
         </div>
 
-        {/* CATEGORY TABS */}
-        <div className="mb-5 flex items-center gap-1.5 overflow-x-auto pb-1">
-          {ALL_CATEGORIES.map((cat) => (
-            <button
-              key={cat}
-              type="button"
-              onClick={() => setActive(cat)}
-              className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
-                active === cat
-                  ? "bg-zinc-100 text-black"
-                  : "border border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200"
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
-
-        {/* GRID */}
         {loading ? (
+          <LoadingSpinner label="Đang tải sự kiện…" />
+        ) : eventsList.length === 0 ? (
           <div className="py-12 text-center text-xs text-zinc-500">
-            Đang tải sự kiện...
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="py-12 text-center text-xs text-zinc-500">
-            Không có sự kiện nào thuộc danh mục này.
+            Chưa có sự kiện đang mở bán.
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filtered.map((event) => (
+            {eventsList.map((event) => (
               <UpcomingCard key={event.id} event={event} />
             ))}
           </div>

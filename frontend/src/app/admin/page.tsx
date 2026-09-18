@@ -88,6 +88,9 @@ const Icons = {
       VÉ
     </span>
   ),
+  SolanaLogo: () => (
+    <span className="inline-block w-3 h-3 mr-1 rounded-sm bg-gradient-to-br from-purple-400 to-green-400" />
+  ),
 };
 
 // Helper Format VNĐ

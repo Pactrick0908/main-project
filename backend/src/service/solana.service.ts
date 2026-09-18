@@ -19,26 +19,109 @@ export class SolanaService {
     "confirmed"
   );
 
+  /** Cache để mọi lần mint/ghi on-chain dùng đúng 1 hot wallet trong process. */
+  private static cachedKeypair: Keypair | null = null;
+
   /**
-   * Khởi tạo Keypair từ private key trong file .env
+   * SOL tiêu thụ mỗi lần ghi vé on-chain (transfer mặc định 0.001 SOL).
+   */
+  static readonly SOL_PER_TICKET = 0.001;
+  static readonly WALLET_SAFE_SOL = 0.1;
+  static readonly WALLET_CRITICAL_SOL = 0.03;
+
+  static getCluster(): "mainnet-beta" | "testnet" | "devnet" {
+    const rpc = process.env.SOLANA_RPC_URL || "https://api.devnet.solana.com";
+    if (rpc.includes("mainnet")) return "mainnet-beta";
+    if (rpc.includes("testnet")) return "testnet";
+    return "devnet";
+  }
+
+  /**
+   * Số dư ví mint admin + ước tính còn tạo được bao nhiêu vé + mức gas.
+   */
+  static async getHotWalletStatus() {
+    const costPerTicket = this.SOL_PER_TICKET;
+    try {
+      const kp = this.getServerKeypair();
+      const address = kp.publicKey.toBase58();
+      const cluster = this.getCluster();
+      let solBalance = 0;
+      let reachable = true;
+      try {
+        const lamports = await Promise.race([
+          this.connection.getBalance(kp.publicKey),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("RPC timeout")), 5_000),
+          ),
+        ]);
+        solBalance = lamports / LAMPORTS_PER_SOL;
+      } catch {
+        reachable = false;
+      }
+
+      const status: "safe" | "low" | "critical" | "unknown" = !reachable
+        ? "unknown"
+        : solBalance > this.WALLET_SAFE_SOL
+          ? "safe"
+          : solBalance >= this.WALLET_CRITICAL_SOL
+            ? "low"
+            : "critical";
+
+      return {
+        configured: true,
+        reachable,
+        address,
+        solBalance: Number(solBalance.toFixed(6)),
+        estimatedTickets: reachable
+          ? Math.max(0, Math.floor(solBalance / costPerTicket))
+          : 0,
+        costPerTicket,
+        status,
+        cluster,
+        explorerUrl: `https://explorer.solana.com/address/${address}?cluster=${cluster}`,
+      };
+    } catch (error: any) {
+      return {
+        configured: false,
+        reachable: false,
+        address: null as string | null,
+        solBalance: 0,
+        estimatedTickets: 0,
+        costPerTicket,
+        status: "critical" as const,
+        cluster: this.getCluster(),
+        explorerUrl: null as string | null,
+        error:
+          error?.message ??
+          "Chưa cấu hình SERVER_PRIVATE_KEY — không đọc được ví admin.",
+      };
+    }
+  }
+
+  /**
+   * Khởi tạo Keypair từ SERVER_PRIVATE_KEY trong file .env
    * Hỗ trợ định dạng Base58 string hoặc JSON array [1,2,3...]
    */
   private static getServerKeypair(): Keypair {
+    if (this.cachedKeypair) return this.cachedKeypair;
+
     const rawKey = process.env.SERVER_PRIVATE_KEY;
     if (!rawKey) {
-      console.warn("⚠️ [Solana] SERVER_PRIVATE_KEY chưa được cấu hình. Tạm thời sinh key ngẫu nhiên cho dev.");
-      return Keypair.generate();
+      throw new Error(
+        "Thiếu SERVER_PRIVATE_KEY trong .env — không thể dùng hot wallet cố định.",
+      );
     }
 
     try {
       const trimmed = rawKey.trim();
-      if (trimmed.startsWith("[")) {
-        return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(trimmed)));
-      }
-      return Keypair.fromSecretKey(bs58.decode(trimmed));
+      const keypair = trimmed.startsWith("[")
+        ? Keypair.fromSecretKey(Uint8Array.from(JSON.parse(trimmed)))
+        : Keypair.fromSecretKey(bs58.decode(trimmed));
+      this.cachedKeypair = keypair;
+      return keypair;
     } catch (error) {
       console.error("❌ [Solana] Lỗi phân tích SERVER_PRIVATE_KEY:", error);
-      return Keypair.generate();
+      throw new Error("SERVER_PRIVATE_KEY không hợp lệ (cần Base58 hoặc JSON array).");
     }
   }
 
@@ -98,5 +181,15 @@ export class SolanaService {
       console.error(`❌ [Solana] Lỗi on-chain cho Order #${orderId}:`, error?.message);
       throw error;
     }
+  }
+
+  static async recordResaleTransferOnChain(params: {
+    tradeId: number;
+    fromWallet: string;
+    toWallet: string;
+  }): Promise<void> {
+    console.log(
+      `[Solana P2P] Trade #${params.tradeId} ${params.fromWallet} → ${params.toWallet}`,
+    );
   }
 }

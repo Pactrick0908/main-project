@@ -2,13 +2,17 @@ import { prisma } from "../lib/prisma.js";
 import {
   assertCanDeleteEvent,
   assertCanUpdateEvent,
+  assertZoneCapacityChange,
   BOOKED_TICKET_STATUSES,
   buildEventEditPolicy,
   isValidEventStatus,
   normalizeEventStatus,
+  type EventEditPolicy,
 } from "./eventPolicy.js";
 
 export type CreateEventZoneInput = {
+  /** EventZone.id khi sửa khu đã gắn sự kiện */
+  eventZoneId?: number;
   /** Tái sử dụng zone có sẵn của địa điểm */
   zoneId?: number;
   name: string;
@@ -42,6 +46,7 @@ export type CreateEventInput = {
   zones: CreateEventZoneInput[];
   /** Line-up nghệ sĩ gắn sự kiện */
   artistIds?: number[];
+  isFeatured?: boolean;
 };
 
 /** Giới hạn sinh ghế để tránh timeout khi total lớn */
@@ -101,6 +106,7 @@ function serializeEvent(event: {
     };
   }>;
   _count?: { tickets: number };
+  isFeatured?: boolean;
 }) {
   const ZONE_COLORS = [
     "#F97316",
@@ -150,6 +156,7 @@ function serializeEvent(event: {
     title: event.title,
     description: event.description,
     organizerName: event.organizerName ?? null,
+    organizerId: event.organizer?.id ?? null,
     organizer: organizerDisplay,
     bannerUrl: event.bannerUrl,
     bannerImage: event.bannerUrl,
@@ -203,6 +210,7 @@ function serializeEvent(event: {
       };
     }),
     soldTickets: soldTicketsTotal,
+    isFeatured: Boolean(event.isFeatured),
     status: normalizeEventStatus(event.status),
     editPolicy: buildEventEditPolicy(event.status, hasBookings),
     organizerInfo: event.organizer
@@ -358,6 +366,170 @@ async function generateSeatsForZone(
   return target;
 }
 
+async function resolveZoneForPlace(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx: any,
+  placeId: number,
+  z: CreateEventZoneInput,
+): Promise<number> {
+  const hasSeats = z.hasSeats ?? true;
+  const name = z.name.trim();
+  if (z.zoneId) {
+    const existingZone = await tx.zone.findFirst({
+      where: { id: z.zoneId, placeId },
+    });
+    if (existingZone) {
+      if (existingZone.hasSeats !== hasSeats) {
+        await tx.zone.update({
+          where: { id: existingZone.id },
+          data: { hasSeats },
+        });
+      }
+      return existingZone.id;
+    }
+  }
+
+  const placeZones = await tx.zone.findMany({ where: { placeId } });
+  const byName = placeZones.find(
+    (pz: { name: string }) => pz.name.trim().toLowerCase() === name.toLowerCase(),
+  );
+  if (byName) {
+    if (byName.hasSeats !== hasSeats) {
+      await tx.zone.update({
+        where: { id: byName.id },
+        data: { hasSeats },
+      });
+    }
+    return byName.id;
+  }
+
+  const createdZone = await tx.zone.create({
+    data: { placeId, name, hasSeats },
+  });
+  return createdZone.id;
+}
+
+async function syncEventZones(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx: any,
+  eventId: number,
+  placeId: number,
+  zones: CreateEventZoneInput[],
+  policy: EventEditPolicy,
+) {
+  const existing = await tx.eventZone.findMany({
+    where: { eventId },
+    include: {
+      zone: true,
+      _count: { select: { tickets: true } },
+    },
+  });
+
+  const incomingIds = new Set(
+    zones
+      .map((z) => Number(z.eventZoneId))
+      .filter((id) => Number.isInteger(id) && id > 0),
+  );
+
+  if (policy.canModifyZones) {
+    for (const ez of existing) {
+      if (incomingIds.has(ez.id)) continue;
+      if (!policy.canDecreaseSeats) {
+        throw Object.assign(
+          new Error(
+            `Đang mở bán — không xóa khu "${ez.zone.name}" (không giảm số ghế).`,
+          ),
+          { status: 409 },
+        );
+      }
+      if (ez._count.tickets > 0) {
+        throw Object.assign(
+          new Error(`Không xóa khu "${ez.zone.name}" — đã có vé bán`),
+          { status: 409 },
+        );
+      }
+      await tx.eventZone.delete({ where: { id: ez.id } });
+    }
+  }
+
+  for (const z of zones) {
+    const hasSeats = z.hasSeats ?? true;
+    const row =
+      hasSeats && z.rowCount
+        ? Math.max(1, Math.floor(Number(z.rowCount)))
+        : null;
+    const eventZoneId = Number(z.eventZoneId);
+    const ez =
+      Number.isInteger(eventZoneId) && eventZoneId > 0
+        ? existing.find((rowEz: { id: number }) => rowEz.id === eventZoneId)
+        : undefined;
+
+    if (ez) {
+      assertZoneCapacityChange(ez._count.tickets, Number(z.totalSeats), z.name, {
+        currentTotal: Number(ez.totalSeats),
+        canDecreaseSeats: policy.canDecreaseSeats,
+      });
+      if (
+        policy.canChangePrice === false &&
+        Number(z.price) !== Number(ez.price)
+      ) {
+        throw Object.assign(
+          new Error(`Không đổi giá khu "${ez.zone.name}" ở trạng thái này.`),
+          { status: 403 },
+        );
+      }
+      const zoneId = policy.canModifyZones
+        ? await resolveZoneForPlace(tx, placeId, z)
+        : ez.zoneId;
+      await tx.eventZone.update({
+        where: { id: ez.id },
+        data: {
+          ...(policy.canModifyZones ? { zoneId, row } : {}),
+          totalSeats: Number(z.totalSeats),
+          ...(policy.canChangePrice ? { price: z.price } : {}),
+        },
+      });
+      if (hasSeats) {
+        await generateSeatsForZone(
+          tx,
+          zoneId,
+          Number(z.totalSeats),
+          row || 1,
+        );
+      }
+      continue;
+    }
+
+    if (!policy.canAddZone && !policy.canModifyZones) {
+      throw Object.assign(new Error(`Không thêm được khu "${z.name}"`), {
+        status: 403,
+      });
+    }
+
+    const zoneId = await resolveZoneForPlace(tx, placeId, z);
+    const dup = await tx.eventZone.findFirst({
+      where: { eventId, zoneId },
+    });
+    if (dup) {
+      throw Object.assign(new Error(`Khu "${z.name}" đã gắn sự kiện này`), {
+        status: 400,
+      });
+    }
+    await tx.eventZone.create({
+      data: {
+        eventId,
+        zoneId,
+        price: z.price,
+        totalSeats: Number(z.totalSeats),
+        row,
+      },
+    });
+    if (z.generateSeats ?? hasSeats) {
+      await generateSeatsForZone(tx, zoneId, Number(z.totalSeats), row || 1);
+    }
+  }
+}
+
 function validateZones(zones: CreateEventZoneInput[]) {
   if (!zones?.length) {
     throw Object.assign(new Error("Cần ít nhất 1 hạng vé / khu vực"), {
@@ -478,12 +650,30 @@ export class EventService {
     }
   }
 
-  static async list() {
+  static async list(statusFilter?: string, featuredOnly?: boolean) {
     const events = await prisma.event.findMany({
+      where: featuredOnly ? { isFeatured: true } : undefined,
       include: eventIncludeList,
       orderBy: { id: "desc" },
     });
-    return events.map(serializeEvent);
+    const serialized = events.map(serializeEvent);
+    const wanted = String(statusFilter ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => normalizeEventStatus(s));
+    let result = wanted.length
+      ? serialized.filter((e) =>
+          wanted.includes(e.status as (typeof wanted)[number]),
+        )
+      : serialized;
+    if (featuredOnly) {
+      result = result.filter((e) => {
+        const st = String(e.status || "").toLowerCase();
+        return st === "upcoming" || st === "open";
+      });
+    }
+    return result;
   }
 
   /**
@@ -507,7 +697,12 @@ export class EventService {
       }),
     ]);
 
-    const serialized = allEvents.map(serializeEvent);
+    const serialized = allEvents
+      .map(serializeEvent)
+      .filter((e) => {
+        const st = String(e.status || "").toLowerCase();
+        return st === "upcoming" || st === "open";
+      });
 
     // Từ khóa nổi bật: nghệ sĩ có gắn sự kiện + một số title sự kiện
     const artistKeywords = allArtists
@@ -526,19 +721,10 @@ export class EventService {
       ...new Set([...artistKeywords, ...eventKeywords].filter(Boolean)),
     ].slice(0, 10);
 
-    // Sắp diễn ra: upcoming/open, có schedule trong tương lai hoặc status phù hợp
-    const now = Date.now();
+    // Chỉ sự kiện upcoming (carousel / gợi ý)
     const upcoming = serialized
-      .filter((e) => {
-        const st = String(e.status || "").toLowerCase();
-        if (st === "ended" || st === "draft") return false;
-        const start = e.schedules?.[0]?.startTime
-          ? new Date(e.schedules[0].startTime).getTime()
-          : null;
-        if (start != null) return start >= now - 24 * 60 * 60 * 1000;
-        return st === "upcoming" || st === "open" || st === "active";
-      })
-      .slice(0, 3);
+      .filter((e) => String(e.status || "").toLowerCase() === "upcoming")
+      .slice(0, 6);
 
     if (!query) {
       const stars = allArtists
@@ -674,6 +860,7 @@ export class EventService {
           mapUrl: input.mapUrl?.trim() || null,
           logoUrl: input.logoUrl?.trim() || null,
           status: input.status ?? "draft",
+          isFeatured: Boolean(input.isFeatured),
           organizerId,
           placeId: placeId!,
         },
@@ -824,6 +1011,7 @@ export class EventService {
       zones?: unknown;
       startTime?: string;
       endTime?: string;
+      isFeatured?: boolean;
     },
   ) {
     const existing = await prisma.event.findUnique({
@@ -859,25 +1047,98 @@ export class EventService {
         ? normalizeEventStatus(String(data.status))
         : undefined;
 
-    // ended → không cho đổi gì (đã assert). Chuẩn hóa active→open khi ghi DB.
-    const updated = await prisma.event.update({
-      where: { id },
-      data: {
-        ...(data.title != null ? { title: data.title } : {}),
-        ...(data.description != null ? { description: data.description } : {}),
-        ...(data.organizerName != null
-          ? { organizerName: data.organizerName.trim() || null }
-          : {}),
-        ...(data.bannerUrl != null ? { bannerUrl: data.bannerUrl || null } : {}),
-        ...(data.mapUrl != null ? { mapUrl: data.mapUrl || null } : {}),
-        ...(data.logoUrl != null ? { logoUrl: data.logoUrl || null } : {}),
-        ...(nextStatus != null ? { status: nextStatus } : {}),
-        ...(policy.canChangePlace && data.placeId != null
-          ? { placeId: data.placeId }
-          : {}),
+    const zonePayload = Array.isArray(data.zones)
+      ? (data.zones as CreateEventZoneInput[])
+      : undefined;
+    if (zonePayload) validateZones(zonePayload);
+
+    if (
+      data.startTime &&
+      data.endTime &&
+      !(new Date(data.endTime) > new Date(data.startTime))
+    ) {
+      throw Object.assign(new Error("endTime phải sau startTime"), {
+        status: 400,
+      });
+    }
+
+    const updated = await prisma.$transaction(
+      async (tx) => {
+        let placeId = existing.placeId;
+        if (policy.canChangePlace && data.placeId != null) {
+          const place = await tx.place.findUnique({
+            where: { id: Number(data.placeId) },
+          });
+          if (!place) {
+            throw Object.assign(new Error("Địa điểm không tồn tại"), {
+              status: 404,
+            });
+          }
+          placeId = place.id;
+        }
+
+        await tx.event.update({
+          where: { id },
+          data: {
+            ...(data.title != null ? { title: data.title } : {}),
+            ...(data.description != null ? { description: data.description } : {}),
+            ...(data.organizerName != null
+              ? { organizerName: data.organizerName.trim() || null }
+              : {}),
+            ...(data.bannerUrl != null
+              ? { bannerUrl: data.bannerUrl || null }
+              : {}),
+            ...(data.mapUrl != null ? { mapUrl: data.mapUrl || null } : {}),
+            ...(data.logoUrl != null ? { logoUrl: data.logoUrl || null } : {}),
+            ...(nextStatus != null ? { status: nextStatus } : {}),
+            ...(data.isFeatured != null
+              ? { isFeatured: Boolean(data.isFeatured) }
+              : {}),
+            ...(policy.canChangePlace && data.placeId != null
+              ? { placeId }
+              : {}),
+          },
+        });
+
+        if (
+          data.startTime &&
+          data.endTime &&
+          (policy.canEditAll || policy.canEditSensitive)
+        ) {
+          const start = new Date(data.startTime);
+          const end = new Date(data.endTime);
+          const sched = await tx.eventSchedule.findFirst({
+            where: { eventId: id },
+            orderBy: { id: "asc" },
+          });
+          if (sched) {
+            await tx.eventSchedule.update({
+              where: { id: sched.id },
+              data: { startTime: start, endTime: end },
+            });
+          } else {
+            await tx.eventSchedule.create({
+              data: {
+                eventId: id,
+                startTime: start,
+                endTime: end,
+                status: "open",
+              },
+            });
+          }
+        }
+
+        if (zonePayload) {
+          await syncEventZones(tx, id, placeId, zonePayload, policy);
+        }
+
+        return tx.event.findUniqueOrThrow({
+          where: { id },
+          include: eventInclude,
+        });
       },
-      include: eventInclude,
-    });
+      { timeout: 60_000, maxWait: 10_000 },
+    );
 
     return serializeEvent(updated);
   }
