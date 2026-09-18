@@ -106,7 +106,12 @@ export default function DynamicQRModal({ ticket, onClose, onCheckedIn }: Props) 
                     className="h-56 w-56 min-h-0"
                   />
                 ) : (
-                  <QRCodeSVG value={qrValue} size={224} level="M" includeMargin={false} />
+                  <QRCodeSVG
+                    value={qrValue}
+                    size={300}
+                    level="L"
+                    marginSize={4}
+                  />
                 )}
               </div>
 
