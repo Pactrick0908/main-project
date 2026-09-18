@@ -86,21 +86,28 @@ export class AdminService {
       }
     }
 
+    const organizerScope = organizerId ? { event: { organizerId } } : {};
     const ticketScope = {
-      ...(eventId ? { eventId } : {}),
-      ...(organizerId && !eventId ? { event: { organizerId } } : {}),
+      ...(eventId ? { eventId } : organizerScope),
     };
     const orderScope = {
       status: "PAID" as const,
-      ...(eventId ? { eventId } : {}),
-      ...(organizerId && !eventId ? { event: { organizerId } } : {}),
+      ...(eventId ? { eventId } : organizerScope),
     };
+    // Chart always aggregates every event (or all of this organizer), ignoring eventId filter.
+    const chartOrderScope = {
+      status: "PAID" as const,
+      ...organizerScope,
+    };
+    const chartTicketScope = { ...organizerScope };
 
     const [
       soldTickets,
       checkedIn,
       paidOrders,
       ticketPrices,
+      chartPaidOrders,
+      chartTicketPrices,
       eventOptions,
       wallet,
     ] = await Promise.all([
@@ -121,6 +128,20 @@ export class AdminService {
         where: {
           status: { in: ["sold", "checked_in", "valid"] },
           ...ticketScope,
+        },
+        select: {
+          createdAt: true,
+          eventZone: { select: { price: true } },
+        },
+      }),
+      prisma.order.findMany({
+        where: chartOrderScope,
+        select: { totalAmount: true, createdAt: true, updatedAt: true },
+      }),
+      prisma.ticket.findMany({
+        where: {
+          status: { in: ["sold", "checked_in", "valid"] },
+          ...chartTicketScope,
         },
         select: {
           createdAt: true,
@@ -153,12 +174,12 @@ export class AdminService {
     const revenue = orderRevenue > 0 ? orderRevenue : ticketRevenue;
 
     const seriesSource =
-      paidOrders.length > 0
-        ? paidOrders.map((o) => ({
+      chartPaidOrders.length > 0
+        ? chartPaidOrders.map((o) => ({
             amount: Number(o.totalAmount),
             at: o.updatedAt ?? o.createdAt,
           }))
-        : ticketPrices.map((t) => ({
+        : chartTicketPrices.map((t) => ({
             amount: Number(t.eventZone.price),
             at: t.createdAt,
           }));
