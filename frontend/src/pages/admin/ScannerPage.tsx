@@ -1,13 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Html5Qrcode } from "html5-qrcode";
+import {
+    BrowserMultiFormatReader,
+    BarcodeFormat,
+    type IScannerControls,
+} from "@zxing/browser";
+import { DecodeHintType } from "@zxing/library";
 import { ticketApi, type QrPayload, type TicketDto } from "@/api/ticket.api";
 
 type ScanResult =
     | { ok: true; message: string; ticket: TicketDto }
     | { ok: false; message: string; ticket?: TicketDto };
 
-const SCANNER_ELEMENT_ID = "gate-qr-reader";
+function createReader() {
+    const hints = new Map<DecodeHintType, unknown>();
+    hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]);
+    hints.set(DecodeHintType.TRY_HARDER, true);
+    hints.set(DecodeHintType.CHARACTER_SET, "UTF-8");
+    return new BrowserMultiFormatReader(hints, {
+        delayBetweenScanAttempts: 150,
+        delayBetweenScanSuccess: 2000,
+    });
+}
 
 export default function ScannerPage() {
     const [result, setResult] = useState<ScanResult | null>(null);
@@ -15,6 +29,9 @@ export default function ScannerPage() {
     const [cameraError, setCameraError] = useState<string | null>(null);
     const [cameraOn, setCameraOn] = useState(false);
     const [manual, setManual] = useState("");
+    const [photoBusy, setPhotoBusy] = useState(false);
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const fileRef = useRef<HTMLInputElement>(null);
     const lastRaw = useRef("");
     const verifying = useRef(false);
     const handlePayloadRef = useRef<(raw: string) => Promise<void>>(
@@ -70,33 +87,37 @@ export default function ScannerPage() {
 
     useEffect(() => {
         let cancelled = false;
-        let scanner: Html5Qrcode | null = null;
+        let controls: IScannerControls | null = null;
+        const reader = createReader();
 
         const start = async () => {
-            try {
-                scanner = new Html5Qrcode(SCANNER_ELEMENT_ID, {
-                    verbose: false,
-                });
+            const video = videoRef.current;
+            if (!video) return;
 
-                // Quét full khung — QR JSON dày dễ miss nếu chỉ quét ô nhỏ
-                await scanner.start(
-                    { facingMode: "environment" },
+            try {
+                controls = await reader.decodeFromConstraints(
                     {
-                        fps: 12,
-                        aspectRatio: 1.777778,
-                        disableFlip: false,
+                        audio: false,
+                        video: {
+                            facingMode: { ideal: "environment" },
+                            width: { ideal: 1920 },
+                            height: { ideal: 1080 },
+                        },
                     },
-                    (decoded) => {
-                        void handlePayloadRef.current(decoded);
-                    },
-                    () => {
-                        /* frame miss — bình thường */
+                    video,
+                    (zxingResult, _err, ctrl) => {
+                        if (cancelled) {
+                            ctrl.stop();
+                            return;
+                        }
+                        if (zxingResult) {
+                            void handlePayloadRef.current(zxingResult.getText());
+                        }
                     },
                 );
 
                 if (cancelled) {
-                    await scanner.stop().catch(() => undefined);
-                    scanner.clear();
+                    controls.stop();
                     return;
                 }
 
@@ -107,7 +128,7 @@ export default function ScannerPage() {
                 if (cancelled) return;
                 setCameraOn(false);
                 setCameraError(
-                    "Không mở được camera. Cần HTTPS (hoặc localhost), cho phép quyền camera, rồi tải lại trang. Hoặc dán JSON QR bên phải.",
+                    "Không mở được camera. Cần HTTPS, cho phép quyền camera, rồi tải lại. Hoặc dùng nút Chụp ảnh QR bên dưới.",
                 );
             }
         };
@@ -116,24 +137,37 @@ export default function ScannerPage() {
 
         return () => {
             cancelled = true;
-            const s = scanner;
-            if (!s) return;
-            void (async () => {
-                try {
-                    if (s.isScanning) {
-                        await s.stop();
-                    }
-                } catch {
-                    /* already stopped */
-                }
-                try {
-                    s.clear();
-                } catch {
-                    /* ignore */
-                }
-            })();
+            try {
+                controls?.stop();
+            } catch {
+                /* ignore */
+            }
+            BrowserMultiFormatReader.releaseAllStreams();
         };
     }, []);
+
+    const onPickPhoto = async (file: File | null) => {
+        if (!file) return;
+        setPhotoBusy(true);
+        setCameraError(null);
+        const url = URL.createObjectURL(file);
+        try {
+            const reader = createReader();
+            const zxingResult = await reader.decodeFromImageUrl(url);
+            await handlePayload(zxingResult.getText());
+        } catch (err) {
+            console.error(err);
+            setResult({
+                ok: false,
+                message:
+                    "Không đọc được QR từ ảnh. Chụp gần hơn, đủ sáng, không bị mờ.",
+            });
+        } finally {
+            URL.revokeObjectURL(url);
+            setPhotoBusy(false);
+            if (fileRef.current) fileRef.current.value = "";
+        }
+    };
 
     const tone =
         result?.ok === true ? "ok" : result?.ok === false ? "bad" : "idle";
@@ -169,9 +203,12 @@ export default function ScannerPage() {
 
             <main className="mx-auto grid max-w-5xl gap-6 px-4 pb-10 sm:grid-cols-2 sm:px-8">
                 <section className="overflow-hidden rounded-2xl bg-black/30 p-3 ring-1 ring-white/15">
-                    <div
-                        id={SCANNER_ELEMENT_ID}
-                        className="aspect-video w-full overflow-hidden rounded-xl bg-black [&_video]:h-full [&_video]:w-full [&_video]:object-cover"
+                    <video
+                        ref={videoRef}
+                        className="aspect-video w-full rounded-xl bg-black object-cover"
+                        muted
+                        playsInline
+                        autoPlay
                     />
                     {!cameraOn && !cameraError && (
                         <p className="mt-3 px-2 text-sm text-white/60">
@@ -183,6 +220,30 @@ export default function ScannerPage() {
                             {cameraError}
                         </p>
                     )}
+                    <div className="mt-3 flex gap-2">
+                        <input
+                            ref={fileRef}
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            className="hidden"
+                            onChange={(e) =>
+                                void onPickPhoto(e.target.files?.[0] ?? null)
+                            }
+                        />
+                        <button
+                            type="button"
+                            disabled={photoBusy}
+                            onClick={() => fileRef.current?.click()}
+                            className="flex-1 rounded-lg bg-white/15 py-2.5 text-sm font-medium hover:bg-white/25 disabled:opacity-50"
+                        >
+                            {photoBusy ? "Đang đọc ảnh…" : "Chụp / chọn ảnh QR"}
+                        </button>
+                    </div>
+                    <p className="mt-2 px-1 text-xs text-white/50">
+                        iPhone: nếu cam live không bắt được, dùng nút chụp ảnh
+                        phía trên (ổn định hơn với QR dày).
+                    </p>
                 </section>
 
                 <section className="flex flex-col justify-center rounded-2xl bg-black/25 p-6 ring-1 ring-white/15">
