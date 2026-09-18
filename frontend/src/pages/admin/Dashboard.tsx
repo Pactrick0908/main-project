@@ -48,10 +48,10 @@ function RevenueChart({
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-3 border-b border-border">
         <div>
-          <CardTitle>Tổng doanh thu</CardTitle>
+          <CardTitle>Tổng doanh thu toàn hệ thống</CardTitle>
           <CardDescription>
             {range === "month" ? "12 tháng gần nhất" : "5 năm gần nhất"} ·{" "}
-            {formatVND(total)}
+            {formatVND(total)} · tất cả sự kiện
           </CardDescription>
         </div>
         <div className="flex rounded-lg border border-border p-0.5">
@@ -162,7 +162,7 @@ export default function Dashboard() {
       title="Tổng quan"
       description={
         isAdmin
-          ? "Doanh thu, tỷ lệ vào vé theo sự kiện và biểu đồ theo tháng/năm"
+          ? "Biểu đồ tổng doanh thu toàn hệ thống và báo cáo theo sự kiện"
           : "Doanh thu và tỷ lệ vào vé của sự kiện bạn tổ chức"
       }
       loading={loading}
@@ -173,85 +173,90 @@ export default function Dashboard() {
         {isAdmin && stats?.wallet && <AdminWalletCard wallet={stats.wallet} />}
 
         {isAdmin && (
-          <div className="flex flex-col gap-1.5 sm:max-w-md">
-            <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Chuyển sự kiện
-            </label>
-            <select
-              value={eventId ? String(eventId) : ""}
-              onChange={(e) =>
-                setEventId(e.target.value ? Number(e.target.value) : undefined)
-              }
-              className="h-9 w-full rounded-lg border border-input bg-input/30 px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-            >
-              <option value="">Tất cả sự kiện</option>
-              {(stats?.events ?? []).map((evt) => (
-                <option key={evt.id} value={evt.id}>
-                  #{evt.id} {evt.title}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Card className="gap-3">
-            <CardHeader className="flex flex-row items-center justify-between pb-0">
-              <CardDescription className="text-[11px] font-semibold uppercase tracking-wider">
-                Doanh thu
-              </CardDescription>
-              <div className="rounded-md bg-muted p-1.5">
-                <TrendingUp className="size-4 text-primary" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-semibold tracking-tight">
-                {formatVND(stats?.revenue ?? 0)}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {isAdmin ? selectedTitle : "Sự kiện của bạn"}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="gap-3">
-            <CardHeader className="flex flex-row items-center justify-between pb-0">
-              <CardDescription className="text-[11px] font-semibold uppercase tracking-wider">
-                Tỷ lệ vào vé
-              </CardDescription>
-              <div className="rounded-md bg-muted p-1.5">
-                <UserCheck className="size-4 text-success" />
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-2xl font-semibold tracking-tight">
-                {stats?.checkInRate ?? 0}%
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Đã check-in{" "}
-                <span className="font-medium text-foreground">
-                  {stats?.checkedIn ?? 0}
-                </span>{" "}
-                / {stats?.soldTickets ?? 0} vé
-              </p>
-              <div className="h-2 overflow-hidden rounded-full bg-muted">
-                <div
-                  className={cn(
-                    "h-full rounded-full bg-success transition-all duration-500",
-                  )}
-                  style={{ width: `${stats?.checkInRate ?? 0}%` }}
-                />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {isAdmin && (
           <RevenueChart
             monthly={stats?.revenueByMonth ?? []}
             yearly={stats?.revenueByYear ?? []}
           />
         )}
+
+        <section className="space-y-4">
+          {isAdmin && (
+            <div className="flex flex-col gap-1.5 sm:max-w-md">
+              <p className="text-sm font-semibold tracking-tight">
+                Báo cáo doanh thu theo sự kiện
+              </p>
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Chuyển sự kiện
+              </label>
+              <select
+                value={eventId ? String(eventId) : ""}
+                onChange={(e) =>
+                  setEventId(e.target.value ? Number(e.target.value) : undefined)
+                }
+                className="h-9 w-full rounded-lg border border-input bg-input/30 px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                <option value="">Tất cả sự kiện</option>
+                {(stats?.events ?? []).map((evt) => (
+                  <option key={evt.id} value={evt.id}>
+                    #{evt.id} {evt.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Card className="gap-3">
+              <CardHeader className="flex flex-row items-center justify-between pb-0">
+                <CardDescription className="text-[11px] font-semibold uppercase tracking-wider">
+                  Doanh thu
+                </CardDescription>
+                <div className="rounded-md bg-muted p-1.5">
+                  <TrendingUp className="size-4 text-primary" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-semibold tracking-tight">
+                  {formatVND(stats?.revenue ?? 0)}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {isAdmin ? selectedTitle : "Sự kiện của bạn"}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="gap-3">
+              <CardHeader className="flex flex-row items-center justify-between pb-0">
+                <CardDescription className="text-[11px] font-semibold uppercase tracking-wider">
+                  Tỷ lệ vào vé
+                </CardDescription>
+                <div className="rounded-md bg-muted p-1.5">
+                  <UserCheck className="size-4 text-success" />
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-2xl font-semibold tracking-tight">
+                  {stats?.checkInRate ?? 0}%
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Đã check-in{" "}
+                  <span className="font-medium text-foreground">
+                    {stats?.checkedIn ?? 0}
+                  </span>{" "}
+                  / {stats?.soldTickets ?? 0} vé
+                </p>
+                <div className="h-2 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={cn(
+                      "h-full rounded-full bg-success transition-all duration-500",
+                    )}
+                    style={{ width: `${stats?.checkInRate ?? 0}%` }}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </section>
       </div>
     </AdminPageShell>
   );
