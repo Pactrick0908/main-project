@@ -258,7 +258,7 @@ export class OrderService {
       amount: totalAmount,
       description: `VE${orderCode}`.slice(0, 25),
       returnUrl: `${clientUrl}/my-tickets?orderCode=${orderCode}`,
-      cancelUrl: `${clientUrl}/events/${event.id}`,
+      cancelUrl: `${clientUrl}/my-tickets?orderCode=${orderCode}&cancel=true`,
     };
 
     let paymentLinkResponse: any;

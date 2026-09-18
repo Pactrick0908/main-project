@@ -68,15 +68,89 @@ export default function MyTicketsPage() {
   const payosCodeParam = searchParams.get("code");
   const payosRedirectPaid =
     statusParam === "PAID" || payosCodeParam === "00";
+  /** Chỉ coi là quay lại từ PayOS khi URL có orderCode / status / cancel */
+  const isPayOSReturn = Boolean(
+    urlOrderCode ||
+      cancelParam ||
+      statusParam ||
+      payosCodeParam,
+  );
+
+  const clearPendingOrderCode = () => {
+    try {
+      localStorage.removeItem("pendingPayOSOrderCode");
+    } catch {
+      /* ignore */
+    }
+    setStoredOrderCode(null);
+  };
 
   useEffect(() => {
     const cancelled =
       cancelParam === "true" ||
       statusParam === "CANCELLED" ||
-      statusParam === "cancelled";
+      statusParam === "cancelled" ||
+      payosCodeParam === "01" ||
+      payosCodeParam === "02";
 
-    if (!orderCodeParam || cancelled) {
+    // Hủy thanh toán (PayOS redirect hoặc URL cancel)
+    if (cancelled) {
+      const codeToCancel = urlOrderCode || storedOrderCode;
+      void (async () => {
+        if (codeToCancel) {
+          try {
+            await ticketApi.cancelPendingOrder(codeToCancel);
+          } catch {
+            /* ignore */
+          }
+        }
+        clearPendingOrderCode();
+        setSearchParams({}, { replace: true });
+        await syncFromWallet();
+      })();
+      return;
+    }
+
+    // Không có mã đơn → chỉ đọc ví
+    if (!orderCodeParam) {
       void syncFromWallet();
+      return;
+    }
+
+    // Chỉ còn mã trong localStorage (user tự vào ví, không phải return PayOS)
+    // → kiểm tra 1 lần; nếu chưa thanh toán thì xóa pending, không báo lỗi
+    if (!isPayOSReturn && !urlOrderCode) {
+      void (async () => {
+        try {
+          const orderRes = await ticketApi.getOrderStatus(orderCodeParam);
+          if (
+            orderRes.data?.status === "PAID" &&
+            (orderRes.data.ticketIds?.length ?? 0) > 0
+          ) {
+            clearPendingOrderCode();
+            await syncFromWallet();
+            return;
+          }
+          if (orderRes.data?.status === "CANCELLED") {
+            clearPendingOrderCode();
+            await syncFromWallet();
+            return;
+          }
+          const payos = await ticketApi.getPayOSPaymentStatus(orderCodeParam);
+          if (payos.data?.paid) {
+            setConfirmingPayment(true);
+            await ticketApi.completePayOSOrder(orderCodeParam);
+            clearPendingOrderCode();
+            await syncFromWallet();
+            setConfirmingPayment(false);
+            return;
+          }
+        } catch {
+          /* bỏ qua — vẫn mở ví bình thường */
+        }
+        clearPendingOrderCode();
+        await syncFromWallet();
+      })();
       return;
     }
 
@@ -94,24 +168,14 @@ export default function MyTicketsPage() {
             orderRes.data?.status === "PAID" &&
             (orderRes.data.ticketIds?.length ?? 0) > 0
           ) {
-            try {
-              localStorage.removeItem("pendingPayOSOrderCode");
-            } catch {
-              /* ignore */
-            }
-            setStoredOrderCode(null);
+            clearPendingOrderCode();
             await syncFromWallet();
             setConfirmingPayment(false);
             setSearchParams({}, { replace: true });
             return;
           }
           if (orderRes.data?.status === "CANCELLED") {
-            try {
-              localStorage.removeItem("pendingPayOSOrderCode");
-            } catch {
-              /* ignore */
-            }
-            setStoredOrderCode(null);
+            clearPendingOrderCode();
             await syncFromWallet();
             setConfirmingPayment(false);
             setSearchParams({}, { replace: true });
@@ -122,7 +186,6 @@ export default function MyTicketsPage() {
             (await ticketApi.getPayOSPaymentStatus(orderCodeParam)).data
               ?.paid === true;
           if (payosConfirmed || payosRedirectPaid) {
-            // Chỉ fake webhook khi PayOS/DB chưa PAID; tránh tạo vé trùng
             if (orderRes.data?.status !== "PAID") {
               await ticketApi.completePayOSOrder(orderCodeParam);
             }
@@ -131,12 +194,7 @@ export default function MyTicketsPage() {
               res.data?.status === "PAID" &&
               (res.data.ticketIds?.length ?? 0) > 0
             ) {
-              try {
-                localStorage.removeItem("pendingPayOSOrderCode");
-              } catch {
-                /* ignore */
-              }
-              setStoredOrderCode(null);
+              clearPendingOrderCode();
               await syncFromWallet();
               setConfirmingPayment(false);
               setSearchParams({}, { replace: true });
@@ -145,15 +203,25 @@ export default function MyTicketsPage() {
           }
           await new Promise((r) => setTimeout(r, 1500));
         }
+        // Quay từ PayOS nhưng chưa nhận tiền → coi như hủy, mở ví bình thường
+        try {
+          await ticketApi.cancelPendingOrder(orderCodeParam);
+        } catch {
+          /* ignore */
+        }
+        clearPendingOrderCode();
         await syncFromWallet();
-        setError(
-          "Chưa nhận được xác nhận chuyển khoản từ PayOS. Nếu đã thanh toán, bấm Làm mới ví.",
-        );
+        setSearchParams({}, { replace: true });
       } catch (err: any) {
-        const message =
-          err?.message ?? "Không xác nhận được thanh toán PayOS";
+        clearPendingOrderCode();
         await syncFromWallet();
-        setError(message);
+        // Chỉ hiện lỗi nếu đang return sau thanh toán thành công (status=PAID)
+        if (payosRedirectPaid) {
+          setError(
+            err?.message ?? "Không xác nhận được thanh toán PayOS",
+          );
+        }
+        setSearchParams({}, { replace: true });
       } finally {
         if (!stopped) {
           setConfirmingPayment(false);
@@ -168,9 +236,13 @@ export default function MyTicketsPage() {
     };
   }, [
     orderCodeParam,
+    urlOrderCode,
+    storedOrderCode,
     cancelParam,
     statusParam,
+    payosCodeParam,
     payosRedirectPaid,
+    isPayOSReturn,
     setSearchParams,
     syncFromWallet,
   ]);
@@ -222,22 +294,22 @@ export default function MyTicketsPage() {
               onClick={() => {
                 void (async () => {
                   if (
-                    orderCodeParam &&
+                    urlOrderCode &&
                     cancelParam !== "true" &&
                     statusParam !== "CANCELLED" &&
                     statusParam !== "cancelled"
                   ) {
                     try {
                       const orderRes =
-                        await ticketApi.getOrderStatus(orderCodeParam);
+                        await ticketApi.getOrderStatus(urlOrderCode);
                       if (
                         orderRes.data?.status !== "PAID" &&
                         orderRes.data?.status !== "CANCELLED"
                       ) {
                         const payos =
-                          await ticketApi.getPayOSPaymentStatus(orderCodeParam);
+                          await ticketApi.getPayOSPaymentStatus(urlOrderCode);
                         if (payos.data?.paid) {
-                          await ticketApi.completePayOSOrder(orderCodeParam);
+                          await ticketApi.completePayOSOrder(urlOrderCode);
                         }
                       }
                     } catch {
