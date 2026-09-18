@@ -14,6 +14,7 @@ import {
   Mic2,
   X,
   Star,
+  Ban,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -261,6 +262,8 @@ export default function EventPage() {
     startTime: "18:00",
     endDate: "",
     endTime: "23:00",
+    saleOpenDate: "",
+    saleOpenTime: "09:00",
     organizerId: "",
     organizerName: "",
     logoUrl: "",
@@ -286,6 +289,8 @@ export default function EventPage() {
     startTime: "18:00",
     endDate: "",
     endTime: "23:00",
+    saleOpenDate: "",
+    saleOpenTime: "09:00",
   });
   const [editZones, setEditZones] = useState<ZoneDraft[]>([]);
   const [editSaving, setEditSaving] = useState(false);
@@ -427,6 +432,23 @@ export default function EventPage() {
       }
     }
 
+    if (!newEvent.saleOpenDate.trim() || !newEvent.saleOpenTime.trim()) {
+      toast.error("Nhập thời gian mở bán vé (ngày + giờ)");
+      return;
+    }
+    const saleOpensIso = toIsoFromVn(
+      newEvent.saleOpenDate,
+      newEvent.saleOpenTime,
+    );
+    if (!saleOpensIso) {
+      toast.error("Thời gian mở bán vé không hợp lệ (dd/mm/yyyy + HH:mm)");
+      return;
+    }
+    if (startIso && new Date(saleOpensIso) >= new Date(startIso)) {
+      toast.error("Thời gian mở bán vé phải trước giờ bắt đầu sự kiện");
+      return;
+    }
+
     for (const z of zoneDrafts) {
       if (!z.name.trim() || !(Number(z.price) > 0) || !(Number(z.totalSeats) >= 1)) {
         toast.error(`Khu "${z.name || "?"}" cần tên, giá > 0 và số lượng ≥ 1`);
@@ -477,6 +499,7 @@ export default function EventPage() {
             }),
         startTime: startIso,
         endTime: endIso,
+        saleOpensAt: saleOpensIso,
         artistIds: selectedArtistIds,
         isFeatured: newEvent.isFeatured,
         zones: zoneDrafts.map((z) => ({
@@ -500,6 +523,8 @@ export default function EventPage() {
         startTime: "18:00",
         endDate: "",
         endTime: "23:00",
+        saleOpenDate: "",
+        saleOpenTime: "09:00",
         organizerId: "",
         organizerName: "",
         logoUrl: "",
@@ -573,6 +598,7 @@ export default function EventPage() {
     }
     const start = partsFromIso(evt.schedules?.[0]?.startTime);
     const end = partsFromIso(evt.schedules?.[0]?.endTime);
+    const sale = partsFromIso(evt.saleOpensAt ?? undefined);
     setEditing(evt);
     setEditForm({
       title: evt.title || "",
@@ -587,6 +613,8 @@ export default function EventPage() {
       startTime: start.time,
       endDate: end.date,
       endTime: end.time,
+      saleOpenDate: sale.date,
+      saleOpenTime: sale.time || "09:00",
     });
     setEditZones(
       (evt.zones || []).map((z, i) => ({
@@ -698,6 +726,23 @@ export default function EventPage() {
 
     const startIso = toIsoFromVn(editForm.startDate, editForm.startTime);
     const endIso = toIsoFromVn(editForm.endDate, editForm.endTime);
+    const saleOpensIso = toIsoFromVn(
+      editForm.saleOpenDate,
+      editForm.saleOpenTime,
+    );
+
+    if (policy.canEditSensitive) {
+      if (editForm.saleOpenDate.trim() || editForm.saleOpenTime.trim()) {
+        if (!saleOpensIso) {
+          toast.error("Thời gian mở bán vé không hợp lệ");
+          return;
+        }
+        if (startIso && new Date(saleOpensIso) >= new Date(startIso)) {
+          toast.error("Thời gian mở bán vé phải trước giờ bắt đầu sự kiện");
+          return;
+        }
+      }
+    }
 
     setEditSaving(true);
     try {
@@ -714,6 +759,9 @@ export default function EventPage() {
           : {}),
         ...(policy.canEditSensitive && startIso && endIso
           ? { startTime: startIso, endTime: endIso }
+          : {}),
+        ...(policy.canEditSensitive
+          ? { saleOpensAt: saleOpensIso || null }
           : {}),
         ...(policy.canModifyZones || policy.canAddZone
           ? {
@@ -747,6 +795,24 @@ export default function EventPage() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Cập nhật thất bại");
     }
+  };
+
+  const handleStopSales = (evt: AdminEvent) => {
+    const st = String(evt.status || "").toLowerCase();
+    if (st === "ended" || st === "draft") return;
+    setModal({
+      kind: "confirm",
+      title: "Ngưng bán vé",
+      description: `Ngưng bán vé sự kiện "${evt.title}"? Khách sẽ không mua được nữa (trạng thái → Đã kết thúc).`,
+      confirmLabel: "Ngưng bán",
+      confirmVariant: "destructive",
+      onConfirm: async () => {
+        await adminApi.stopEventSales(evt.id);
+        setModal(null);
+        toast.success("Đã ngưng bán vé");
+        await refresh();
+      },
+    });
   };
 
   const handleDeleteEvent = (id: number, title: string, policy: AdminEventEditPolicy) => {
@@ -1014,6 +1080,49 @@ export default function EventPage() {
                             }
                           />
                         </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5 rounded-xl border border-border bg-muted/20 p-3 md:col-span-2">
+                    <p className="text-[11px] font-semibold text-foreground">
+                      Mở bán vé
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">
+                      Khách chỉ mua được sau thời điểm này (khi sự kiện open /
+                      upcoming đã tới giờ).
+                    </p>
+                    <div className="grid grid-cols-[1.4fr_1fr] gap-2 sm:max-w-md">
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-muted-foreground">
+                          Ngày (dd/mm/yyyy)
+                        </label>
+                        <Input
+                          inputMode="numeric"
+                          placeholder="20/09/2026"
+                          value={newEvent.saleOpenDate}
+                          onChange={(e) =>
+                            setNewEvent({
+                              ...newEvent,
+                              saleOpenDate: formatDateInput(e.target.value),
+                            })
+                          }
+                          maxLength={10}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-muted-foreground">
+                          Giờ
+                        </label>
+                        <Input
+                          type="time"
+                          value={newEvent.saleOpenTime}
+                          onChange={(e) =>
+                            setNewEvent({
+                              ...newEvent,
+                              saleOpenTime: e.target.value,
+                            })
+                          }
+                        />
                       </div>
                     </div>
                   </div>
@@ -1456,6 +1565,13 @@ export default function EventPage() {
                 <div className="absolute bottom-3 left-4 right-4 flex items-end justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <StatusBadge status={evt.status} />
+                    {evt.soldOut &&
+                      evt.status !== "ended" &&
+                      evt.status !== "draft" && (
+                        <span className="rounded-md bg-destructive/15 px-1.5 py-0.5 text-[10px] font-semibold text-destructive">
+                          Hết vé
+                        </span>
+                      )}
                     {evt.isFeatured && (
                       <span className="inline-flex items-center gap-1 rounded-md bg-[#F97316] px-1.5 py-0.5 text-[10px] font-semibold text-white">
                         <Star className="size-2.5 fill-current" />
@@ -1489,6 +1605,11 @@ export default function EventPage() {
                         {" → "}
                         {formatScheduleLabel(evt.schedules[0].endTime)}
                       </span>
+                    </p>
+                  )}
+                  {evt.saleOpensAt && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Mở bán: {formatScheduleLabel(evt.saleOpensAt)}
                     </p>
                   )}
                   {(evt.artists?.length || evt.artist) && (
@@ -1576,6 +1697,22 @@ export default function EventPage() {
                         {policy.reason}
                       </p>
                       <Separator />
+                      {(evt.status === "open" ||
+                        evt.status === "upcoming" ||
+                        evt.status === "active" ||
+                        evt.status === "published") &&
+                        policy.canChangeStatus && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 w-full border-destructive/40 text-destructive hover:bg-destructive/10"
+                            onClick={() => handleStopSales(evt)}
+                          >
+                            <Ban className="size-3.5" />
+                            Ngưng bán vé
+                          </Button>
+                        )}
                       <div className="flex items-center gap-2">
                         <select
                           value={
@@ -1835,6 +1972,36 @@ export default function EventPage() {
                     value={editForm.endTime}
                     onChange={(e) =>
                       setEditForm((f) => ({ ...f, endTime: e.target.value }))
+                    }
+                    className="h-8"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1 rounded-lg border border-border bg-muted/20 p-2 sm:col-span-2">
+                <p className="text-[10px] font-semibold">Mở bán vé</p>
+                <div className="grid grid-cols-[1.4fr_1fr] gap-1.5 sm:max-w-md">
+                  <Input
+                    disabled={!policy.canEditSensitive}
+                    placeholder="dd/mm/yyyy"
+                    value={editForm.saleOpenDate}
+                    onChange={(e) =>
+                      setEditForm((f) => ({
+                        ...f,
+                        saleOpenDate: formatDateInput(e.target.value),
+                      }))
+                    }
+                    maxLength={10}
+                    className="h-8"
+                  />
+                  <Input
+                    type="time"
+                    disabled={!policy.canEditSensitive}
+                    value={editForm.saleOpenTime}
+                    onChange={(e) =>
+                      setEditForm((f) => ({
+                        ...f,
+                        saleOpenTime: e.target.value,
+                      }))
                     }
                     className="h-8"
                   />

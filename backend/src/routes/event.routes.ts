@@ -6,6 +6,7 @@ import {
   listEvents,
   listPlaces,
   searchCatalog,
+  stopEventSales,
   updateEvent,
 } from "../controller/event.controller.js";
 import { requirePermission } from "../middleware/rbac.middleware.js";
@@ -26,6 +27,11 @@ router.post(
         : req.auth?.userId,
   })),
   createEvent,
+);
+router.post(
+  "/:id/stop-sales",
+  requirePermission(PERMISSIONS.EVENT_UPDATE),
+  stopEventSales,
 );
 router.patch("/:id", requirePermission(PERMISSIONS.EVENT_UPDATE), updateEvent);
 router.delete("/:id", requirePermission(PERMISSIONS.EVENT_DELETE), deleteEvent);

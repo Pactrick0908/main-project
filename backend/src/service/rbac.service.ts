@@ -11,7 +11,7 @@ import {
   permissionsOf,
   roleHasPermission,
   type PermissionCode,
-} from "./permissions.js";
+} from "../rbac/permissions.js"
 
 export type ResourceScope = {
   eventId?: number;

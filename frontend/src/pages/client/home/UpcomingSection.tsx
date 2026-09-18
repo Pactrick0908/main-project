@@ -16,25 +16,32 @@ function UpcomingSection() {
     setLoading(true);
 
     eventApi
-      .listEvents({ status: "open" })
+      .listEvents({ status: "open,upcoming" })
       .then((res) => {
         if (isMounted) {
-          const dbEvents: UpcomingEvent[] = (res.data?.events ?? []).map(
-            (e: any) => ({
+          const dbEvents: UpcomingEvent[] = (res.data?.events ?? [])
+            .filter((e: any) => {
+              const st = String(e.status || "").toLowerCase();
+              return st === "open" || st === "upcoming";
+            })
+            .map((e: any) => ({
               id: e.id,
               title: e.title,
               description: e.description || "",
-              banner_url: e.banner_url || e.bannerImage || e.thumbnail || "",
-              organizer_id: e.organizer_id,
-              place_id: e.place_id,
+              banner_url: e.banner_url || e.bannerImage || e.bannerUrl || e.thumbnail || "",
+              organizer_id: e.organizer_id || e.organizerId,
+              place_id: e.place_id || e.place?.id,
               status: e.status,
               schedules: e.schedules || [],
               zones: e.zones || [],
               soldTickets: e.soldTickets || 0,
               place: e.place,
               passCount: e.passCount || 0,
-            }),
-          );
+              saleOpensAt: e.saleOpensAt ?? null,
+              ticketsAvailable: e.ticketsAvailable,
+              saleOpened: e.saleOpened,
+              soldOut: e.soldOut,
+            }));
           setEventsList(dbEvents);
         }
       })
@@ -55,7 +62,7 @@ function UpcomingSection() {
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
         {/* HEADER */}
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-xl font-bold text-white">Đang mở bán</h2>
+          <h2 className="text-xl font-bold text-white">Sự kiện đang &amp; sắp mở bán</h2>
           <Link
             to="/marketplace"
             className="inline-flex items-center gap-1.5 text-sm text-zinc-400 hover:text-white transition-colors"

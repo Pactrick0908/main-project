@@ -105,10 +105,70 @@ export class OrderService {
 
     const event = await prisma.event.findUnique({
       where: { id: Number(eventId) },
-      select: { id: true, title: true, status: true },
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        saleOpensAt: true,
+        schedules: {
+          orderBy: { startTime: "asc" },
+          take: 1,
+          select: { startTime: true },
+        },
+      },
     });
     if (!event) {
       throw Object.assign(new Error("Không tìm thấy sự kiện"), { status: 404 });
+    }
+
+    // Tới giờ bắt đầu sự kiện → tự đóng bán
+    const startsAt = event.schedules[0]?.startTime;
+    if (
+      startsAt &&
+      new Date() >= startsAt &&
+      !["ended", "draft"].includes(String(event.status || "").toLowerCase())
+    ) {
+      await prisma.event.update({
+        where: { id: event.id },
+        data: { status: "ended" },
+      });
+      throw Object.assign(
+        new Error("Sự kiện đã bắt đầu — ngừng bán vé"),
+        { status: 409 },
+      );
+    }
+
+    const status = String(event.status || "").toLowerCase();
+    if (status === "ended" || status === "draft") {
+      throw Object.assign(
+        new Error(
+          status === "ended"
+            ? "Sự kiện đã ngừng bán / kết thúc — không thể mua vé"
+            : "Sự kiện chưa công bố — chưa mở bán vé",
+        ),
+        { status: 409 },
+      );
+    }
+    if (event.saleOpensAt && new Date() < event.saleOpensAt) {
+      throw Object.assign(
+        new Error(
+          `Chưa tới giờ mở bán vé (${event.saleOpensAt.toLocaleString("vi-VN")})`,
+        ),
+        { status: 409 },
+      );
+    }
+    if (status === "open") {
+      // ok
+    } else if (
+      status === "upcoming" &&
+      event.saleOpensAt &&
+      new Date() >= event.saleOpensAt
+    ) {
+      // Cho mua sớm khi đã tới giờ mở bán dù status còn upcoming
+    } else {
+      throw Object.assign(new Error("Sự kiện chưa mở bán vé"), {
+        status: 409,
+      });
     }
 
     let totalAmount = 0;
@@ -138,6 +198,12 @@ export class OrderService {
         },
       });
       const remaining = eventZone.totalSeats - soldCount;
+      if (remaining <= 0) {
+        throw Object.assign(
+          new Error(`Hạng "${eventZone.zone.name}" đã hết vé`),
+          { status: 409 },
+        );
+      }
       if (quantity > remaining) {
         throw Object.assign(
           new Error(
@@ -236,49 +302,56 @@ export class OrderService {
 
   /**
    * Sau khi PAID: tạo Ticket(s), gán user + ví custodial, mã vé (mintAddress).
+   * Dùng FOR UPDATE để chặn race khi poll + webhook + MyTickets gọi đồng thời.
    */
   static async fulfillPaidOrder(orderId: number) {
-    const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      include: { user: true },
-    });
-    if (!order) {
-      throw Object.assign(new Error("Không tìm thấy đơn hàng"), { status: 404 });
-    }
-    if (order.status !== "PAID") {
-      throw Object.assign(new Error("Đơn chưa thanh toán"), { status: 409 });
-    }
-
-    const existingIds = Array.isArray(order.ticketIdsJson)
-      ? (order.ticketIdsJson as number[])
-      : [];
-    if (existingIds.length > 0 || order.ticketId) {
-      return {
-        ticketIds: existingIds.length
-          ? existingIds
-          : order.ticketId
-            ? [order.ticketId]
-            : [],
-        alreadyFulfilled: true,
-      };
-    }
-
-    if (!order.eventId || !order.itemsJson) {
-      throw Object.assign(
-        new Error("Đơn hàng thiếu thông tin sự kiện / hạng vé"),
-        { status: 400 },
-      );
-    }
-
-    const items = order.itemsJson as OrderItemInput[];
-    const ownerWallet = order.user.walletAddress;
-    if (!ownerWallet) {
-      throw Object.assign(new Error("User chưa có ví Solana"), { status: 400 });
-    }
-
     const createdIds: number[] = [];
+    let alreadyFulfilled = false;
+    let ownerWallet: string | null = null;
 
     await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT id FROM orders WHERE id = ${orderId} FOR UPDATE`;
+
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        include: { user: true },
+      });
+      if (!order) {
+        throw Object.assign(new Error("Không tìm thấy đơn hàng"), { status: 404 });
+      }
+      if (order.status !== "PAID") {
+        throw Object.assign(new Error("Đơn chưa thanh toán"), { status: 409 });
+      }
+
+      const existingIds = Array.isArray(order.ticketIdsJson)
+        ? (order.ticketIdsJson as number[])
+        : [];
+      if (existingIds.length > 0 || order.ticketId) {
+        alreadyFulfilled = true;
+        createdIds.push(
+          ...(existingIds.length
+            ? existingIds
+            : order.ticketId
+              ? [order.ticketId]
+              : []),
+        );
+        ownerWallet = order.user.walletAddress;
+        return;
+      }
+
+      if (!order.eventId || !order.itemsJson) {
+        throw Object.assign(
+          new Error("Đơn hàng thiếu thông tin sự kiện / hạng vé"),
+          { status: 400 },
+        );
+      }
+
+      const items = order.itemsJson as OrderItemInput[];
+      ownerWallet = order.user.walletAddress;
+      if (!ownerWallet) {
+        throw Object.assign(new Error("User chưa có ví Solana"), { status: 400 });
+      }
+
       let seq = 0;
       for (const item of items) {
         const eventZone = await tx.eventZone.findFirst({
@@ -345,11 +418,47 @@ export class OrderService {
       });
     });
 
-    console.log(
-      `🎫 [Fulfill] Order #${order.id} → ${createdIds.length} vé: ${createdIds.join(", ")} → ví ${ownerWallet}`,
-    );
+    if (!alreadyFulfilled) {
+      console.log(
+        `🎫 [Fulfill] Order #${orderId} → ${createdIds.length} vé: ${createdIds.join(", ")} → ví ${ownerWallet}`,
+      );
+    }
 
-    return { ticketIds: createdIds, alreadyFulfilled: false };
+    return { ticketIds: createdIds, alreadyFulfilled };
+  }
+
+  /** Hủy đơn PENDING khi user đóng QR / bỏ thanh toán. */
+  static async cancelPendingOrder(orderCode: string | number) {
+    const order = await prisma.order.findUnique({
+      where: { orderCode: BigInt(orderCode) },
+      select: { id: true, status: true, orderCode: true },
+    });
+    if (!order) {
+      throw Object.assign(new Error("Không tìm thấy đơn hàng"), { status: 404 });
+    }
+    if (order.status === "PAID") {
+      throw Object.assign(new Error("Đơn đã thanh toán, không hủy được"), {
+        status: 409,
+      });
+    }
+    if (order.status === "CANCELLED") {
+      return {
+        orderCode: order.orderCode.toString(),
+        status: "CANCELLED" as const,
+        alreadyCancelled: true,
+      };
+    }
+
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { status: "CANCELLED" },
+    });
+
+    return {
+      orderCode: order.orderCode.toString(),
+      status: "CANCELLED" as const,
+      alreadyCancelled: false,
+    };
   }
 
   /**
@@ -364,10 +473,16 @@ export class OrderService {
       throw Object.assign(new Error("Không tìm thấy đơn hàng"), { status: 404 });
     }
 
+    if (order.status === "CANCELLED") {
+      throw Object.assign(new Error("Đơn đã hủy, không thể cấp vé"), {
+        status: 409,
+      });
+    }
+
     if (order.status !== "PAID") {
       await prisma.$transaction(async (tx) => {
         const updated = await tx.order.updateMany({
-          where: { id: order.id, status: { not: "PAID" } },
+          where: { id: order.id, status: "PENDING" },
           data: { status: "PAID" },
         });
         if (updated.count === 0) return;
@@ -480,6 +595,15 @@ export class OrderService {
         orderStatus: "PAID" as const,
         payosStatus: "PAID",
         paid: true,
+      };
+    }
+
+    if (order.status === "CANCELLED") {
+      return {
+        orderCode: order.orderCode.toString(),
+        orderStatus: "CANCELLED" as const,
+        payosStatus: "CANCELLED",
+        paid: false,
       };
     }
 

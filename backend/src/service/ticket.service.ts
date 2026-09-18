@@ -351,8 +351,9 @@ export class TicketService {
         },
         include: ticketInclude,
       }),
-      prisma.ticketNonce.update({
-        where: { nonce },
+      // Vô hiệu mọi nonce còn lại của vé — QR trên điện thoại khách hết hiệu lực ngay
+      prisma.ticketNonce.updateMany({
+        where: { ticketId, usedAt: null },
         data: { usedAt: new Date() },
       }),
     ]);
@@ -363,6 +364,28 @@ export class TicketService {
       message: "Check-in thành công",
       ticket: serializeTicket(updated),
     };
+  }
+
+  /** Trạng thái nhẹ cho client poll khi đang hiện QR. */
+  static async getStatusForOwner(
+    ticketId: number,
+    requester: { walletAddress?: string; userId?: number },
+  ) {
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: ticketId },
+      include: ticketInclude,
+    });
+    if (!ticket) {
+      throw Object.assign(new Error("Không tìm thấy vé"), { status: 404 });
+    }
+    const owns =
+      (requester.walletAddress &&
+        ticket.ownerWallet === requester.walletAddress) ||
+      (requester.userId != null && ticket.userId === requester.userId);
+    if (!owns) {
+      throw Object.assign(new Error("Bạn không sở hữu vé này"), { status: 403 });
+    }
+    return serializeTicket(ticket);
   }
 
   static async listAllForAdmin() {

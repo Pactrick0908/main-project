@@ -43,6 +43,8 @@ export type CreateEventInput = {
   placeId?: number;
   startTime?: string;
   endTime?: string;
+  /** Thời gian mở bán vé (ISO) */
+  saleOpensAt?: string;
   zones: CreateEventZoneInput[];
   /** Line-up nghệ sĩ gắn sự kiện */
   artistIds?: number[];
@@ -63,6 +65,7 @@ function serializeEvent(event: {
   status: string | null;
   ticketId: string | null;
   createdAt: Date;
+  saleOpensAt?: Date | null;
   place: { id: number; name: string; address: string; city: string };
   organizer?: {
     id: number;
@@ -151,6 +154,41 @@ function serializeEvent(event: {
     .filter(Boolean)
     .join(", ");
 
+  const soldOut = event.eventZones.every(
+    (ez) => Math.max(0, ez.totalSeats - (ez._count?.tickets ?? 0)) <= 0,
+  );
+  const status = normalizeEventStatus(event.status);
+  const saleOpensAt = event.saleOpensAt ?? null;
+  const eventStart = event.schedules[0]?.startTime ?? null;
+  const now = new Date();
+  const saleOpened = !saleOpensAt || saleOpensAt <= now;
+  const beforeEventStart = !eventStart || eventStart > now;
+  const salesOpen =
+    status !== "draft" &&
+    status !== "ended" &&
+    !soldOut &&
+    saleOpened &&
+    beforeEventStart;
+  const ticketsAvailable = salesOpen;
+
+  const prices = event.eventZones.map((ez) => Number(ez.price)).filter((p) => p > 0);
+  const minPrice = prices.length ? Math.min(...prices) : null;
+  const maxPrice = prices.length ? Math.max(...prices) : null;
+  const priceRange =
+    minPrice == null
+      ? "Liên hệ"
+      : maxPrice != null && maxPrice !== minPrice
+        ? `${minPrice.toLocaleString("vi-VN")} – ${maxPrice.toLocaleString("vi-VN")} đ`
+        : `${minPrice.toLocaleString("vi-VN")} đ`;
+
+  const dateLabel = eventStart
+    ? new Date(eventStart).toLocaleDateString("vi-VN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      })
+    : "Chưa cập nhật";
+
   return {
     id: event.id,
     title: event.title,
@@ -160,6 +198,7 @@ function serializeEvent(event: {
     organizer: organizerDisplay,
     bannerUrl: event.bannerUrl,
     bannerImage: event.bannerUrl,
+    thumbnail: event.bannerUrl,
     mapUrl: event.mapUrl ?? null,
     logoUrl: event.logoUrl ?? null,
     ticketId: event.ticketId,
@@ -168,14 +207,21 @@ function serializeEvent(event: {
     venue: event.place?.name,
     address: event.place?.address,
     city: event.place?.city,
+    location: [event.place?.name, event.place?.city].filter(Boolean).join(", "),
     artist: artistLineup || organizerDisplay,
     artists,
+    category: "Concert",
+    date: dateLabel,
+    priceRange,
+    minPrice,
+    maxPrice,
     schedules: event.schedules.map((s) => ({
       id: s.id,
       startTime: s.startTime,
       endTime: s.endTime,
       status: s.status,
     })),
+    saleOpensAt,
     zones: event.eventZones.map((ez, idx) => {
       // Số hàng cấu hình từ event_zones.row (công thức total_seats / row)
       const rowCount =
@@ -211,7 +257,12 @@ function serializeEvent(event: {
     }),
     soldTickets: soldTicketsTotal,
     isFeatured: Boolean(event.isFeatured),
-    status: normalizeEventStatus(event.status),
+    status,
+    soldOut,
+    salesClosed: status === "ended",
+    salesOpen,
+    saleOpened,
+    ticketsAvailable,
     editPolicy: buildEventEditPolicy(event.status, hasBookings),
     organizerInfo: event.organizer
       ? {
@@ -650,7 +701,109 @@ export class EventService {
     }
   }
 
+  /**
+   * Đóng bán vé khi đã tới (hoặc quá) giờ bắt đầu sự kiện.
+   * @returns số sự kiện vừa chuyển sang ended
+   */
+  static async closeSalesPastStartTime(eventId?: number) {
+    const now = new Date();
+    const candidates = await prisma.event.findMany({
+      where: {
+        ...(eventId ? { id: eventId } : {}),
+        status: { in: ["open", "upcoming", "active", "published"] },
+        schedules: { some: { startTime: { lte: now } } },
+      },
+      select: { id: true, title: true },
+    });
+    if (!candidates.length) return { closed: 0, ids: [] as number[] };
+
+    const ids = candidates.map((e) => e.id);
+    await prisma.event.updateMany({
+      where: { id: { in: ids } },
+      data: { status: "ended" },
+    });
+    return { closed: ids.length, ids };
+  }
+
+  /**
+   * Đồng bộ: tới giờ mở bán → chuyển upcoming → open (nếu chưa tới giờ diễn).
+   */
+  static async openSalesDueEvents(eventId?: number) {
+    const now = new Date();
+    const candidates = await prisma.event.findMany({
+      where: {
+        ...(eventId ? { id: eventId } : {}),
+        status: { in: ["upcoming"] },
+        saleOpensAt: { lte: now },
+      },
+      select: {
+        id: true,
+        schedules: {
+          orderBy: { startTime: "asc" },
+          take: 1,
+          select: { startTime: true },
+        },
+      },
+    });
+    const ids = candidates
+      .filter((e) => {
+        const start = e.schedules[0]?.startTime;
+        return !start || start > now;
+      })
+      .map((e) => e.id);
+    if (!ids.length) return { opened: 0, ids: [] as number[] };
+    await prisma.event.updateMany({
+      where: { id: { in: ids } },
+      data: { status: "open" },
+    });
+    return { opened: ids.length, ids };
+  }
+
+  /** Chạy đồng bộ đóng/mở bán theo lịch. */
+  static async syncSalesWindows(eventId?: number) {
+    const closed = await this.closeSalesPastStartTime(eventId);
+    const opened = await this.openSalesDueEvents(eventId);
+    return { closed, opened };
+  }
+
+  /** Ngưng bán thủ công (admin/organizer). */
+  static async stopSales(id: number) {
+    const existing = await prisma.event.findUnique({
+      where: { id },
+      select: { id: true, status: true },
+    });
+    if (!existing) {
+      throw Object.assign(new Error("Không tìm thấy sự kiện"), { status: 404 });
+    }
+    const status = normalizeEventStatus(existing.status);
+    if (status === "ended") {
+      return serializeEvent(
+        await prisma.event.findUniqueOrThrow({
+          where: { id },
+          include: eventIncludeList,
+        }),
+      );
+    }
+    if (status === "draft") {
+      throw Object.assign(
+        new Error("Sự kiện nháp — hãy xóa hoặc công bố trước"),
+        { status: 409 },
+      );
+    }
+    await prisma.event.update({
+      where: { id },
+      data: { status: "ended" },
+    });
+    return serializeEvent(
+      await prisma.event.findUniqueOrThrow({
+        where: { id },
+        include: eventIncludeList,
+      }),
+    );
+  }
+
   static async list(statusFilter?: string, featuredOnly?: boolean) {
+    await this.syncSalesWindows().catch(() => undefined);
     const events = await prisma.event.findMany({
       where: featuredOnly ? { isFeatured: true } : undefined,
       include: eventIncludeList,
@@ -794,6 +947,7 @@ export class EventService {
   }
 
   static async getById(id: number) {
+    await this.syncSalesWindows(id).catch(() => undefined);
     const event = await prisma.event.findUnique({
       where: { id },
       include: eventInclude,
@@ -861,6 +1015,9 @@ export class EventService {
           logoUrl: input.logoUrl?.trim() || null,
           status: input.status ?? "draft",
           isFeatured: Boolean(input.isFeatured),
+          saleOpensAt: input.saleOpensAt
+            ? new Date(input.saleOpensAt)
+            : null,
           organizerId,
           placeId: placeId!,
         },
@@ -874,6 +1031,20 @@ export class EventService {
             status: 400,
           });
         }
+        if (input.saleOpensAt) {
+          const saleOpens = new Date(input.saleOpensAt);
+          if (Number.isNaN(saleOpens.getTime())) {
+            throw Object.assign(new Error("Thời gian mở bán vé không hợp lệ"), {
+              status: 400,
+            });
+          }
+          if (!(saleOpens < start)) {
+            throw Object.assign(
+              new Error("Thời gian mở bán vé phải trước giờ bắt đầu sự kiện"),
+              { status: 400 },
+            );
+          }
+        }
         await tx.eventSchedule.create({
           data: {
             eventId: created.id,
@@ -882,6 +1053,13 @@ export class EventService {
             status: "open",
           },
         });
+      } else if (input.saleOpensAt) {
+        const saleOpens = new Date(input.saleOpensAt);
+        if (Number.isNaN(saleOpens.getTime())) {
+          throw Object.assign(new Error("Thời gian mở bán vé không hợp lệ"), {
+            status: 400,
+          });
+        }
       }
 
       for (const z of input.zones) {
@@ -1011,6 +1189,7 @@ export class EventService {
       zones?: unknown;
       startTime?: string;
       endTime?: string;
+      saleOpensAt?: string | null;
       isFeatured?: boolean;
     },
   ) {
@@ -1062,6 +1241,31 @@ export class EventService {
       });
     }
 
+    if (data.saleOpensAt != null && data.saleOpensAt !== "") {
+      const saleOpens = new Date(data.saleOpensAt);
+      if (Number.isNaN(saleOpens.getTime())) {
+        throw Object.assign(new Error("Thời gian mở bán vé không hợp lệ"), {
+          status: 400,
+        });
+      }
+      const eventStart =
+        data.startTime != null
+          ? new Date(data.startTime)
+          : (
+              await prisma.eventSchedule.findFirst({
+                where: { eventId: id },
+                orderBy: { id: "asc" },
+                select: { startTime: true },
+              })
+            )?.startTime;
+      if (eventStart && !(saleOpens < eventStart)) {
+        throw Object.assign(
+          new Error("Thời gian mở bán vé phải trước giờ bắt đầu sự kiện"),
+          { status: 400 },
+        );
+      }
+    }
+
     const updated = await prisma.$transaction(
       async (tx) => {
         let placeId = existing.placeId;
@@ -1093,6 +1297,14 @@ export class EventService {
             ...(nextStatus != null ? { status: nextStatus } : {}),
             ...(data.isFeatured != null
               ? { isFeatured: Boolean(data.isFeatured) }
+              : {}),
+            ...(data.saleOpensAt !== undefined
+              ? {
+                  saleOpensAt:
+                    data.saleOpensAt === null || data.saleOpensAt === ""
+                      ? null
+                      : new Date(data.saleOpensAt),
+                }
               : {}),
             ...(policy.canChangePlace && data.placeId != null
               ? { placeId }

@@ -1,4 +1,4 @@
-﻿import { CheckCircle2, Armchair, QrCode, Check, Sparkles } from "lucide-react";
+import { CheckCircle2, Armchair, QrCode, Check, Sparkles } from "lucide-react";
 import type { DetailedEvent } from "@/data/events.data";
 
 interface ZoneTicketSelectorProps {
@@ -10,6 +10,8 @@ interface ZoneTicketSelectorProps {
   totalPriceVND: number;
   allSelectedSeats: string[];
   isProcessing: boolean;
+  salesLocked?: boolean;
+  salesLockedReason?: string;
   formatVND: (val: number) => string;
   onQuantityChange: (zoneId: string, delta: number) => void;
   onSelectZone: (zoneId: string) => void;
@@ -25,6 +27,8 @@ export default function ZoneTicketSelector({
   totalPriceVND,
   allSelectedSeats,
   isProcessing,
+  salesLocked = false,
+  salesLockedReason,
   formatVND,
   onQuantityChange,
   onSelectZone,
@@ -32,6 +36,11 @@ export default function ZoneTicketSelector({
 }: ZoneTicketSelectorProps) {
   return (
     <div className="flex flex-col justify-between rounded-xl border border-zinc-800 bg-[#12131A] p-3.5 sm:p-4 space-y-4">
+      {salesLocked && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-200">
+          {salesLockedReason || "Sự kiện đã hết vé hoặc ngừng bán."}
+        </div>
+      )}
       <div>
         <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5 mb-3">
           <h2 className="text-sm font-bold text-white flex items-center gap-1.5">
@@ -47,6 +56,13 @@ export default function ZoneTicketSelector({
           {event.zones.map((zone) => {
             const qty = selectedQuantities[zone.id] || 0;
             const isSelected = qty > 0;
+            const remaining = Number(
+              (zone as { available?: number }).available ??
+                zone.totalSeats ??
+                99,
+            );
+            const zoneSoldOut = remaining <= 0;
+            const lockQty = salesLocked || zoneSoldOut;
 
             return (
               <div
@@ -55,7 +71,9 @@ export default function ZoneTicketSelector({
                 className={`flex items-center justify-between gap-2.5 rounded-lg border p-2.5 transition-all cursor-pointer ${
                   isSelected
                     ? "border-[#F97316] bg-[#F97316]/10 shadow-[0_0_12px_rgba(249,115,22,0.12)] ring-1 ring-[#F97316]"
-                    : "border-zinc-800 bg-zinc-900/60 hover:border-zinc-700"
+                    : zoneSoldOut
+                      ? "border-zinc-800 bg-zinc-900/40 opacity-70"
+                      : "border-zinc-800 bg-zinc-900/60 hover:border-zinc-700"
                 }`}
               >
                 {/* Cột trái: Tên, Màu sắc, Giá & Quyền lợi */}
@@ -67,6 +85,11 @@ export default function ZoneTicketSelector({
                   <div className="min-w-0">
                     <h3 className="text-xs font-bold text-white truncate">
                       {zone.name}
+                      {zoneSoldOut && (
+                        <span className="ml-1.5 text-[10px] font-semibold text-red-400">
+                          Hết vé
+                        </span>
+                      )}
                     </h3>
                     <div className="text-xs font-extrabold text-[#F97316] mt-0.5">
                       {formatVND(zone.price)}
@@ -74,8 +97,10 @@ export default function ZoneTicketSelector({
                     <div className="text-[10px] text-zinc-400 mt-0.5 flex items-center gap-1 line-clamp-1">
                       <CheckCircle2 className="h-2.5 w-2.5 text-emerald-400 shrink-0" />
                       <span>
-                        {zone.benefits?.[0] ||
-                          "Bao gồm quyền vào cửa và check-in QR"}
+                        {zoneSoldOut
+                          ? "Không còn chỗ trống"
+                          : zone.benefits?.[0] ||
+                            "Bao gồm quyền vào cửa và check-in QR"}
                       </span>
                     </div>
                   </div>
@@ -89,7 +114,7 @@ export default function ZoneTicketSelector({
                       e.stopPropagation();
                       onQuantityChange(zone.id, -1);
                     }}
-                    disabled={qty <= 0}
+                    disabled={qty <= 0 || salesLocked}
                     className="h-6 w-6 rounded-md border border-zinc-700 bg-zinc-800 text-xs font-bold text-white hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   >
                     -
@@ -103,7 +128,7 @@ export default function ZoneTicketSelector({
                       e.stopPropagation();
                       onQuantityChange(zone.id, 1);
                     }}
-                    disabled={qty >= 4}
+                    disabled={lockQty || qty >= Math.min(4, remaining)}
                     className="h-6 w-6 rounded-md border border-zinc-700 bg-zinc-800 text-xs font-bold text-white hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   >
                     +
@@ -215,7 +240,7 @@ export default function ZoneTicketSelector({
           <button
             type="button"
             onClick={onBuyTicket}
-            disabled={isProcessing || totalTickets === 0}
+            disabled={isProcessing || totalTickets === 0 || salesLocked}
             className="flex items-center justify-center gap-1.5 rounded-lg bg-[#F97316] hover:bg-[#ea6d0e] px-5 py-2.5 text-xs font-bold text-white transition-all shadow-[0_4px_16px_rgba(249,115,22,0.25)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
           >
             {isProcessing ? (
@@ -223,6 +248,8 @@ export default function ZoneTicketSelector({
                 <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                 Đang tạo đơn VietQR…
               </>
+            ) : salesLocked ? (
+              <>Hết / ngừng bán</>
             ) : (
               <>
                 <Sparkles className="h-3.5 w-3.5" />

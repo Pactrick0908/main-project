@@ -144,6 +144,18 @@ export const ticketApi = {
     };
   },
 
+  /** Hủy đơn PENDING khi đóng QR / bỏ thanh toán */
+  cancelPendingOrder: (orderCode: number | string) =>
+    api<{
+      success: boolean;
+      message?: string;
+      data: {
+        orderCode: string;
+        status: "CANCELLED";
+        alreadyCancelled: boolean;
+      };
+    }>(`/orders/${orderCode}/cancel`, { method: "POST" }),
+
   /** Kiểm tra trạng thái đơn hàng theo orderCode */
   getOrderStatus: (orderCode: number | string) =>
     api<{
@@ -166,6 +178,12 @@ export const ticketApi = {
       success: boolean;
       data: { payload: QrPayload; ttlMs: number; ticket: TicketDto };
     }>(`/tickets/${ticketId}/qr`, { method: "POST" }),
+
+  getStatus: (ticketId: number) =>
+    api<{
+      success: boolean;
+      data: { ticket: TicketDto };
+    }>(`/tickets/${ticketId}/status`),
 
   verify: (payload: QrPayload) =>
     api<{

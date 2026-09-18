@@ -131,6 +131,29 @@ export const verifyTicket = async (req: Request, res: Response) => {
   }
 };
 
+export const getTicketStatus = async (req: Request, res: Response) => {
+  try {
+    const user = await resolveUser(req);
+    if (!user) {
+      return res.status(401).json({ success: false, message: "Chưa đăng nhập" });
+    }
+    const ticketId = Number(req.params.id);
+    if (!Number.isFinite(ticketId)) {
+      return res.status(400).json({ success: false, message: "ticket id không hợp lệ" });
+    }
+    const ticket = await TicketService.getStatusForOwner(ticketId, {
+      walletAddress: user.walletAddress,
+      userId: user.id,
+    });
+    return res.json({ success: true, data: { ticket } });
+  } catch (error: any) {
+    return res.status(error?.status ?? 500).json({
+      success: false,
+      message: error?.message ?? "Lỗi tải trạng thái vé",
+    });
+  }
+};
+
 export const listTicketsAdmin = async (_req: Request, res: Response) => {
   try {
     const tickets = await TicketService.listAllForAdmin();

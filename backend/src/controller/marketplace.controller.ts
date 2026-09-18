@@ -67,7 +67,7 @@ export const createListing = async (req: Request, res: Response) => {
       bankName: String(req.body.bankName || ""),
       bankAccountNo: String(req.body.bankAccountNo || ""),
       bankAccountName: String(req.body.bankAccountName || ""),
-      note: req.body.note ? String(req.body.note) : undefined,
+      ...(req.body.note ? { note: String(req.body.note) } : {}),
     });
 
     return res.status(201).json({

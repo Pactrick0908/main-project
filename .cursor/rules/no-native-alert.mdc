@@ -1,0 +1,16 @@
+---
+description: UI feedback must use Modal/toast — never window.alert or confirm
+alwaysApply: true
+---
+
+# No native alert / confirm
+
+When asking the user to confirm, warn, or acknowledge something in the frontend:
+
+- **Do use** `Modal` from `@/components/ui/modal`, or `AdminConfirmModal` / toast (`@/lib/toast`).
+- **Do not use** `alert()`, `confirm()`, or `prompt()` (including `window.alert` / `window.confirm`).
+
+Examples:
+- Login required before purchase → open a `Modal` with confirm → navigate `/login`
+- Destructive actions → `AdminConfirmModal` or `Modal` with `confirmVariant="destructive"`
+- Success / error feedback → `toast.success` / `toast.error`

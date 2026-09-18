@@ -11,15 +11,76 @@ export interface FeaturedEvent {
   location: string;
   priceRange: string;
   officialLink: string;
+  /** Đang mở bán và còn vé → hiện nút Mua vé */
   ticketsAvailable: boolean;
-  passCount: number; // số vé cộng đồng đang pass lại
-  tag?: string; // nhãn nổi bật
+  /** Đã tới giờ mở bán (saleOpensAt) */
+  saleOpened: boolean;
+  soldOut: boolean;
+  saleOpensAt?: string | null;
+  passCount: number;
+  tag?: string;
+  status?: string;
 }
 
 function FeaturedCard({ event }: { event: FeaturedEvent }) {
+  const saleLabel = event.saleOpensAt
+    ? new Date(event.saleOpensAt).toLocaleString("vi-VN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : null;
+
+  const cta = (() => {
+    if (event.ticketsAvailable) {
+      return (
+        <Link
+          to={`/events/${event.id}`}
+          className="inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold bg-[#F97316] hover:bg-[#ea6d0e] text-white transition-colors"
+        >
+          Mua vé
+          <ExternalLink className="h-3 w-3" />
+        </Link>
+      );
+    }
+    if (event.soldOut) {
+      return (
+        <span className="inline-flex h-8 items-center rounded-lg px-3 text-xs font-semibold border border-zinc-700 bg-zinc-900/50 text-zinc-500 cursor-not-allowed">
+          Hết vé
+        </span>
+      );
+    }
+    if (!event.saleOpened) {
+      return (
+        <span
+          className="inline-flex h-8 items-center rounded-lg px-3 text-xs font-semibold border border-zinc-700 bg-zinc-900/50 text-zinc-400"
+          title={saleLabel ? `Mở bán: ${saleLabel}` : undefined}
+        >
+          Sắp mở bán
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex h-8 items-center rounded-lg px-3 text-xs font-semibold border border-zinc-700 bg-zinc-900/50 text-zinc-500 cursor-not-allowed">
+        Ngừng bán
+      </span>
+    );
+  })();
+
+  const tag =
+    event.tag ||
+    (event.ticketsAvailable
+      ? "Còn vé"
+      : event.soldOut
+        ? "Hết vé"
+        : !event.saleOpened
+          ? "Sắp mở bán"
+          : undefined);
+
   return (
     <div className="group flex flex-col overflow-hidden rounded-xl border border-zinc-800 bg-[#12131A] h-full transition-colors hover:border-zinc-700">
-      {/* IMAGE */}
       <div className="relative aspect-[16/9] overflow-hidden bg-zinc-900">
         <img
           src={event.image}
@@ -28,26 +89,26 @@ function FeaturedCard({ event }: { event: FeaturedEvent }) {
         />
         <div className="absolute inset-0 bg-[linear-gradient(to_top,#12131A_10%,transparent_65%)]" />
 
-        {/* TAG */}
-        {event.tag && (
+        {tag && (
           <div className="absolute top-3 left-3">
             <span
               className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${
-                event.tag === "Đang hot" || event.tag === "Nổi bật"
+                tag === "Đang hot" || tag === "Nổi bật"
                   ? "bg-[#F97316] text-white"
-                  : event.tag === "Hết vé"
+                  : tag === "Hết vé" || tag === "Ngừng bán"
                     ? "bg-zinc-700 text-zinc-200"
-                    : event.tag === "Còn vé"
+                    : tag === "Còn vé"
                       ? "bg-emerald-600 text-white"
-                      : "border border-zinc-600 bg-zinc-900/80 text-zinc-300"
+                      : tag === "Sắp mở bán"
+                        ? "border border-amber-500/40 bg-amber-500/15 text-amber-200"
+                        : "border border-zinc-600 bg-zinc-900/80 text-zinc-300"
               }`}
             >
-              {event.tag}
+              {tag}
             </span>
           </div>
         )}
 
-        {/* CATEGORY */}
         <div className="absolute top-3 right-3">
           <span className="rounded-md border border-zinc-700/60 bg-black/60 px-2 py-0.5 text-[10px] font-medium text-zinc-300 backdrop-blur-sm">
             {event.category}
@@ -55,7 +116,6 @@ function FeaturedCard({ event }: { event: FeaturedEvent }) {
         </div>
       </div>
 
-      {/* BODY */}
       <div className="flex flex-1 flex-col p-4">
         <p className="text-[11px] font-medium text-zinc-500">{event.artist}</p>
         <h3 className="mt-1 line-clamp-2 text-sm font-bold leading-snug text-white">
@@ -71,9 +131,11 @@ function FeaturedCard({ event }: { event: FeaturedEvent }) {
             <MapPin className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
             <span className="truncate">{event.location}</span>
           </div>
+          {!event.saleOpened && saleLabel && (
+            <p className="text-[10px] text-amber-400/90">Mở bán: {saleLabel}</p>
+          )}
         </div>
 
-        {/* PRICE + CTA */}
         <div className="mt-4 flex items-center justify-between border-t border-zinc-800 pt-3 gap-3">
           <div>
             <div className="text-[10px] text-zinc-500">Giá vé từ</div>
@@ -83,7 +145,6 @@ function FeaturedCard({ event }: { event: FeaturedEvent }) {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {/* CHỢ VÉ NẾU CÓ NGƯỜI PASS */}
             {event.passCount > 0 && (
               <Link
                 to={`/events/${event.id}/resale`}
@@ -93,21 +154,7 @@ function FeaturedCard({ event }: { event: FeaturedEvent }) {
                 {event.passCount} pass
               </Link>
             )}
-
-            {/* MUA VÉ TRỰC TIẾP */}
-            {event.ticketsAvailable ? (
-              <Link
-                to={`/events/${event.id}`}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold bg-[#F97316] hover:bg-[#ea6d0e] text-white transition-colors"
-              >
-                Mua vé
-                <ExternalLink className="h-3 w-3" />
-              </Link>
-            ) : (
-              <span className="inline-flex h-8 items-center rounded-lg px-3 text-xs font-semibold border border-zinc-700 bg-zinc-900/50 text-zinc-500 cursor-not-allowed">
-                Hết vé
-              </span>
-            )}
+            {cta}
           </div>
         </div>
       </div>

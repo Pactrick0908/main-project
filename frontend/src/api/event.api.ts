@@ -30,6 +30,7 @@ export interface EventDto extends DetailedEvent {
     endTime: string;
     status?: string | null;
   }>;
+  saleOpensAt?: string | null;
   place?: { id?: number; name: string; address?: string; city: string };
   zones: EventZoneDto[];
   artists?: Array<{
@@ -47,6 +48,19 @@ export interface EventDto extends DetailedEvent {
     avatarUrl?: string | null;
   };
   isFeatured?: boolean;
+  soldOut?: boolean;
+  salesClosed?: boolean;
+  salesOpen?: boolean;
+  saleOpened?: boolean;
+  ticketsAvailable?: boolean;
+  saleOpensAt?: string | null;
+  date?: string;
+  priceRange?: string;
+  category?: string;
+  thumbnail?: string | null;
+  venue?: string;
+  location?: string;
+  artist?: string;
 }
 
 async function api<T>(

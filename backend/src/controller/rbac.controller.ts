@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { RbacService } from "../rbac/rbac.service.js";
+import { RbacService } from "../service/rbac.service.js";
 
 const assignSchema = z.object({
   userId: z.coerce.number().int().positive(),

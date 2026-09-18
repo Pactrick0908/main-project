@@ -125,6 +125,25 @@ export const deleteEvent = async (req: Request, res: Response) => {
   }
 };
 
+export const stopEventSales = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const event = await EventService.stopSales(id);
+    return res.json({
+      success: true,
+      message: "Đã ngưng bán vé sự kiện",
+      data: { event },
+    });
+  } catch (error: any) {
+    return res
+      .status(error?.status ?? 500)
+      .json({
+        success: false,
+        message: error?.message ?? "Lỗi ngưng bán vé",
+      });
+  }
+};
+
 export const listPlaces = async (_req: Request, res: Response) => {
   try {
     const places = await EventService.listPlaces();

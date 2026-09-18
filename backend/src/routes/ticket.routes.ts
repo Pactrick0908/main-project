@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  getTicketStatus,
   issueDemoTicket,
   issueTicketQr,
   listMyTickets,
@@ -12,6 +13,7 @@ const router = Router();
 
 router.get("/mine", requireAuth, listMyTickets);
 router.post("/demo", requireAuth, issueDemoTicket);
+router.get("/:id/status", requireAuth, getTicketStatus);
 router.post("/:id/qr", requireAuth, issueTicketQr);
 router.post("/verify", requireScanner, verifyTicket);
 router.get("/", listTicketsAdmin);

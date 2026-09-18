@@ -9,6 +9,7 @@ import { prisma } from "./lib/prisma.js";
 import { seedRbac } from "./rbac/rbac.seed.js";
 import { ensureMarketplaceSchema } from "./service/ensureMarketplaceSchema.js";
 import { registerPayOSWebhook } from "./config/payos.config.js";
+import { EventService } from "./service/event.service.js";
 dotenv.config();
 
 const app = express();
@@ -58,6 +59,28 @@ const server = app.listen(PORT, async () => {
   }
   console.log(`Backend server đang chạy tại http://localhost:${PORT}`);
   void registerPayOSWebhook();
+
+  // Tự đóng/mở bán vé theo lịch (mỗi phút)
+  const runSalesSync = () => {
+    void EventService.syncSalesWindows()
+      .then((r) => {
+        if (r.closed.closed > 0) {
+          console.log(
+            `[Sales] Đã tự đóng bán ${r.closed.closed} sự kiện:`,
+            r.closed.ids.join(", "),
+          );
+        }
+        if (r.opened.opened > 0) {
+          console.log(
+            `[Sales] Đã mở bán ${r.opened.opened} sự kiện (tới giờ mở bán):`,
+            r.opened.ids.join(", "),
+          );
+        }
+      })
+      .catch((err) => console.warn("[Sales] syncSalesWindows:", err));
+  };
+  runSalesSync();
+  setInterval(runSalesSync, 60_000);
 });
 
 server.on("error", (err: NodeJS.ErrnoException) => {

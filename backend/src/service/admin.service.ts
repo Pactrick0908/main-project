@@ -226,19 +226,26 @@ export class AdminService {
       });
     }
 
-    const updated = await prisma.ticket.update({
-      where: { id: ticketId },
-      data: {
-        status: "checked_in",
-        checkedInAt: new Date(),
-        checkedInBy: adminLabel ?? "admin-manual",
-      },
-      include: {
-        event: true,
-        eventZone: { include: { zone: true } },
-        seat: true,
-        user: true,
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      const t = await tx.ticket.update({
+        where: { id: ticketId },
+        data: {
+          status: "checked_in",
+          checkedInAt: new Date(),
+          checkedInBy: adminLabel ?? "admin-manual",
+        },
+        include: {
+          event: true,
+          eventZone: { include: { zone: true } },
+          seat: true,
+          user: true,
+        },
+      });
+      await tx.ticketNonce.updateMany({
+        where: { ticketId, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+      return t;
     });
 
     return {

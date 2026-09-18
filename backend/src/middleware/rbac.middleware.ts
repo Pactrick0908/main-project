@@ -1,9 +1,9 @@
 import type { NextFunction, Request, Response } from "express";
-import { RbacService, type ResourceScope } from "../rbac/rbac.service.js";
+import { RbacService, type ResourceScope } from "../service/rbac.service.js";
 import type { PermissionCode } from "../rbac/permissions.js";
 import { requireAuth } from "./auth.middleware.js";
 
-export { RbacService } from "../rbac/rbac.service.js";
+export { RbacService } from "../service/rbac.service.js";
 
 /** Dùng trong service: checkPermission('EVENT_UPDATE', { eventId }) */
 export async function checkPermission(

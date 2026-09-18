@@ -88,14 +88,49 @@ export default function MyTicketsPage() {
       try {
         for (let i = 0; i < 20; i++) {
           if (stopped) return;
+
+          const orderRes = await ticketApi.getOrderStatus(orderCodeParam);
+          if (
+            orderRes.data?.status === "PAID" &&
+            (orderRes.data.ticketIds?.length ?? 0) > 0
+          ) {
+            try {
+              localStorage.removeItem("pendingPayOSOrderCode");
+            } catch {
+              /* ignore */
+            }
+            setStoredOrderCode(null);
+            await syncFromWallet();
+            setConfirmingPayment(false);
+            setSearchParams({}, { replace: true });
+            return;
+          }
+          if (orderRes.data?.status === "CANCELLED") {
+            try {
+              localStorage.removeItem("pendingPayOSOrderCode");
+            } catch {
+              /* ignore */
+            }
+            setStoredOrderCode(null);
+            await syncFromWallet();
+            setConfirmingPayment(false);
+            setSearchParams({}, { replace: true });
+            return;
+          }
+
           const payosConfirmed =
-            payosRedirectPaid ||
             (await ticketApi.getPayOSPaymentStatus(orderCodeParam)).data
-              ?.paid;
-          if (payosConfirmed) {
-            await ticketApi.completePayOSOrder(orderCodeParam);
+              ?.paid === true;
+          if (payosConfirmed || payosRedirectPaid) {
+            // Chỉ fake webhook khi PayOS/DB chưa PAID; tránh tạo vé trùng
+            if (orderRes.data?.status !== "PAID") {
+              await ticketApi.completePayOSOrder(orderCodeParam);
+            }
             const res = await ticketApi.getOrderStatus(orderCodeParam);
-            if (res.data?.status === "PAID") {
+            if (
+              res.data?.status === "PAID" &&
+              (res.data.ticketIds?.length ?? 0) > 0
+            ) {
               try {
                 localStorage.removeItem("pendingPayOSOrderCode");
               } catch {
@@ -193,10 +228,17 @@ export default function MyTicketsPage() {
                     statusParam !== "cancelled"
                   ) {
                     try {
-                      const payos =
-                        await ticketApi.getPayOSPaymentStatus(orderCodeParam);
-                      if (payos.data?.paid || payosRedirectPaid) {
-                        await ticketApi.completePayOSOrder(orderCodeParam);
+                      const orderRes =
+                        await ticketApi.getOrderStatus(orderCodeParam);
+                      if (
+                        orderRes.data?.status !== "PAID" &&
+                        orderRes.data?.status !== "CANCELLED"
+                      ) {
+                        const payos =
+                          await ticketApi.getPayOSPaymentStatus(orderCodeParam);
+                        if (payos.data?.paid) {
+                          await ticketApi.completePayOSOrder(orderCodeParam);
+                        }
                       }
                     } catch {
                       // vẫn đọc ví

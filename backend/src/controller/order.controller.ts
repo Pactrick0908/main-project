@@ -90,6 +90,33 @@ export const getOrderStatus = async (req: Request, res: Response) => {
 };
 
 /**
+ * Hủy đơn PENDING (đóng QR / bỏ thanh toán).
+ * POST /api/v1/orders/:orderCode/cancel
+ */
+export const cancelPendingOrder = async (req: Request, res: Response) => {
+  try {
+    const { orderCode } = req.params;
+    if (!orderCode) {
+      return res.status(400).json({ success: false, message: "Thiếu orderCode" });
+    }
+
+    const data = await OrderService.cancelPendingOrder(orderCode);
+    return res.status(200).json({
+      success: true,
+      message: data.alreadyCancelled
+        ? "Đơn đã hủy trước đó"
+        : "Đã hủy đơn thanh toán",
+      data,
+    });
+  } catch (error: any) {
+    return res.status(error?.status ?? 500).json({
+      success: false,
+      message: error?.message || "Không hủy được đơn",
+    });
+  }
+};
+
+/**
  * Hỏi PayOS đã nhận tiền chưa — không cấp vé.
  * GET /api/v1/orders/:orderCode/payos
  */

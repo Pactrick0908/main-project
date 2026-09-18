@@ -186,7 +186,13 @@ export function assertCanUpdateEvent(
 
   if (
     !policy.canEditSensitive &&
-    keys.some((k) => k === "startTime" || k === "endTime" || k === "schedules")
+    keys.some(
+      (k) =>
+        k === "startTime" ||
+        k === "endTime" ||
+        k === "schedules" ||
+        k === "saleOpensAt",
+    )
   ) {
     throw Object.assign(new Error("Không được đổi lịch diễn ở trạng thái này."), {
       status: 403,
@@ -212,6 +218,7 @@ export function assertCanUpdateEvent(
     allowed.add("startTime");
     allowed.add("endTime");
     allowed.add("schedules");
+    allowed.add("saleOpensAt");
   }
   if (policy.canModifyZones || policy.canAddZone) {
     allowed.add("zones");

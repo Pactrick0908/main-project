@@ -87,6 +87,8 @@ export type AdminEvent = {
     endTime: string;
     status: string | null;
   }>;
+  /** Thời điểm mở bán vé */
+  saleOpensAt?: string | null;
   zones: AdminEventZone[];
   soldTickets: number;
   editPolicy?: AdminEventEditPolicy;
@@ -100,6 +102,8 @@ export type AdminEvent = {
   }>;
   artist?: string;
   isFeatured?: boolean;
+  soldOut?: boolean;
+  salesClosed?: boolean;
 };
 
 export type AdminWalletStatus = {
@@ -346,6 +350,7 @@ export const adminApi = {
     place?: { name: string; address: string; city: string };
     startTime?: string;
     endTime?: string;
+    saleOpensAt?: string;
     artistIds?: number[];
     isFeatured?: boolean;
     zones: Array<{
@@ -377,6 +382,7 @@ export const adminApi = {
       placeId: number;
       startTime: string;
       endTime: string;
+      saleOpensAt: string | null;
       zones: Array<{
         eventZoneId?: number;
         zoneId?: number;
@@ -396,6 +402,12 @@ export const adminApi = {
 
   deleteEvent: (id: number) =>
     api<{ success: boolean }>(`/events/${id}`, { method: "DELETE" }),
+
+  stopEventSales: (id: number) =>
+    api<{ success: boolean; data: { event: AdminEvent } }>(
+      `/events/${id}/stop-sales`,
+      { method: "POST" },
+    ),
 
   rbacCatalog: () =>
     api<{ success: boolean; data: RbacCatalog }>("/admin/rbac/catalog"),

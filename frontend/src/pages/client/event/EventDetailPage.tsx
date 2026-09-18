@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -27,6 +27,7 @@ import StadiumOverviewMap from "./StadiumOverviewMap";
 import ZoneTicketSelector from "./ZoneTicketSelector";
 import { toast } from "@/lib/toast";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { Modal } from "@/components/ui/modal";
 
 export default function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -54,6 +55,8 @@ export default function EventDetailPage() {
   );
   const [isZoomed, setIsZoomed] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [salesLocked, setSalesLocked] = useState(false);
+  const [salesLockedReason, setSalesLockedReason] = useState("");
 
   // Quản lý ghế ngồi đã chọn theo từng phân khu (vd: { svip: ["SA1", "SA2"], cat1: ["C1-A1"] })
   const [selectedSeatsByZone, setSelectedSeatsByZone] = useState<
@@ -73,10 +76,19 @@ export default function EventDetailPage() {
           const dbEvent = res.data.event as any;
           const st = String(dbEvent.status || "").toLowerCase();
           if (st === "draft" || st === "ended" || st === "completed") {
-            toast.error("Sự kiện này chưa mở hoặc đã kết thúc.");
+            toast.error(
+              st === "ended" || st === "completed"
+                ? "Sự kiện đã ngừng bán hoặc kết thúc."
+                : "Sự kiện này chưa mở bán.",
+            );
             navigate("/");
             return;
           }
+          const soldOut = Boolean(dbEvent.soldOut);
+          setSalesLocked(soldOut);
+          setSalesLockedReason(
+            soldOut ? "Tất cả hạng vé đã bán hết." : "",
+          );
           const fallback = EVENTS_DATA[eventId] || EVENTS_DATA[1];
 
           // Ghép dữ liệu DB với fallback UI (banner, artist…)
@@ -202,6 +214,10 @@ export default function EventDetailPage() {
 
   // Modals state
   const [qrModal, setQrModal] = useState(false);
+  const pollCleanupRef = useRef<(() => void) | null>(null);
+  const fulfillInFlightRef = useRef<Set<string>>(new Set());
+  const finishedOrderRef = useRef<Set<string>>(new Set());
+  const [loginPromptOpen, setLoginPromptOpen] = useState(false);
   const [orderInfo, setOrderInfo] = useState<{
     orderId: number;
     orderCode: number;
@@ -377,13 +393,7 @@ export default function EventDetailPage() {
     }
 
     if (!isAuthenticated) {
-      if (
-        confirm(
-          "Bạn cần đăng nhập để lưu vé vào tài khoản và nhận mã Dynamic QR. Chuyển đến trang Đăng nhập ngay?",
-        )
-      ) {
-        navigate("/login");
-      }
+      setLoginPromptOpen(true);
       return;
     }
 
@@ -437,9 +447,23 @@ export default function EventDetailPage() {
       toast.error("Vui lòng chọn ít nhất 1 vé!");
       return;
     }
+    if (salesLocked) {
+      toast.error(salesLockedReason || "Không thể mua vé lúc này");
+      return;
+    }
 
     setIsProcessing(true);
     try {
+      stopPolling();
+      const previousCode = orderInfo?.orderCode;
+      if (previousCode) {
+        try {
+          await ticketApi.cancelPendingOrder(previousCode);
+        } catch {
+          /* ignore */
+        }
+      }
+
       const res = await ticketApi.createOrderVietQR({
         eventId: eventIdNum,
         items: itemsFinal,
@@ -468,17 +492,72 @@ export default function EventDetailPage() {
     }
   };
 
-  const fulfillAfterPayOSPaid = async (orderCode: number) => {
-    await ticketApi.completePayOSOrder(orderCode);
-    for (let i = 0; i < 10; i++) {
-      const res = await ticketApi.getOrderStatus(orderCode);
-      if (res.data?.status === "PAID") return res.data;
-      await new Promise((r) => setTimeout(r, 400));
+  const stopPolling = () => {
+    pollCleanupRef.current?.();
+    pollCleanupRef.current = null;
+  };
+
+  const abandonCurrentOrder = async () => {
+    stopPolling();
+    const code = orderInfo?.orderCode;
+    setQrModal(false);
+    if (!code) return;
+    try {
+      const pending = localStorage.getItem("pendingPayOSOrderCode");
+      if (pending === String(code)) {
+        localStorage.removeItem("pendingPayOSOrderCode");
+      }
+    } catch {
+      /* ignore */
     }
-    return null;
+    try {
+      await ticketApi.cancelPendingOrder(code);
+    } catch {
+      /* đơn đã PAID / không tìm thấy — bỏ qua */
+    }
+  };
+
+  const fulfillAfterPayOSPaid = async (orderCode: number) => {
+    const key = String(orderCode);
+    if (fulfillInFlightRef.current.has(key)) {
+      for (let i = 0; i < 10; i++) {
+        const res = await ticketApi.getOrderStatus(orderCode);
+        if (res.data?.status === "PAID" && (res.data.ticketIds?.length ?? 0) > 0) {
+          return res.data;
+        }
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      return null;
+    }
+    fulfillInFlightRef.current.add(key);
+    try {
+      const existing = await ticketApi.getOrderStatus(orderCode);
+      if (
+        existing.data?.status === "PAID" &&
+        (existing.data.ticketIds?.length ?? 0) > 0
+      ) {
+        return existing.data;
+      }
+      if (existing.data?.status === "CANCELLED") {
+        return null;
+      }
+      await ticketApi.completePayOSOrder(orderCode);
+      for (let i = 0; i < 10; i++) {
+        const res = await ticketApi.getOrderStatus(orderCode);
+        if (res.data?.status === "PAID") return res.data;
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      return null;
+    } finally {
+      fulfillInFlightRef.current.delete(key);
+    }
   };
 
   const finishPaidOrder = (orderCode: number) => {
+    const key = String(orderCode);
+    if (finishedOrderRef.current.has(key)) return;
+    finishedOrderRef.current.add(key);
+    stopPolling();
     try {
       localStorage.removeItem("pendingPayOSOrderCode");
     } catch {
@@ -490,6 +569,7 @@ export default function EventDetailPage() {
 
   // Poll PayOS; chỉ gọi webhook khi PayOS báo đã nhận tiền
   const startPolling = (orderCode: number) => {
+    stopPolling();
     let stopped = false;
     let inFlight = false;
     const poll = async () => {
@@ -497,11 +577,17 @@ export default function EventDetailPage() {
       inFlight = true;
       try {
         const payos = await ticketApi.getPayOSPaymentStatus(orderCode);
+        if (payos.data?.orderStatus === "CANCELLED") {
+          stopped = true;
+          return true;
+        }
         if (payos.data?.paid) {
           const paid = await fulfillAfterPayOSPaid(orderCode);
-          stopped = true;
-          finishPaidOrder(orderCode);
-          return true;
+          if (paid) {
+            stopped = true;
+            finishPaidOrder(orderCode);
+            return true;
+          }
         }
       } catch {
         // PayOS chưa PAID hoặc lỗi mạng — thử lại
@@ -517,14 +603,21 @@ export default function EventDetailPage() {
       if (done) clearInterval(interval);
     }, 3000);
 
-    setTimeout(() => {
+    const timeout = setTimeout(() => {
       stopped = true;
       clearInterval(interval);
     }, 300000);
+
+    pollCleanupRef.current = () => {
+      stopped = true;
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
   };
 
   const handleSimulatePayment = async () => {
     if (!orderInfo) return;
+    stopPolling();
     try {
       await fulfillAfterPayOSPaid(orderInfo.orderCode);
       finishPaidOrder(orderInfo.orderCode);
@@ -536,6 +629,12 @@ export default function EventDetailPage() {
       );
     }
   };
+
+  useEffect(() => {
+    return () => {
+      stopPolling();
+    };
+  }, []);
 
   if (isLoadingEvent) {
     return (
@@ -708,6 +807,8 @@ export default function EventDetailPage() {
             totalPriceVND={totalPriceVND}
             allSelectedSeats={allSelectedSeats}
             isProcessing={isProcessing}
+            salesLocked={salesLocked}
+            salesLockedReason={salesLockedReason}
             formatVND={formatVND}
             onQuantityChange={handleQuantityChange}
             onSelectZone={(zoneId) => setActiveZoneId(zoneId)}
@@ -720,9 +821,24 @@ export default function EventDetailPage() {
       <VietQRModal
         isOpen={qrModal}
         orderInfo={orderInfo}
-        onClose={() => setQrModal(false)}
+        onClose={() => {
+          void abandonCurrentOrder();
+        }}
         onSimulateSuccess={handleSimulatePayment}
         formatVND={formatVND}
+      />
+
+      <Modal
+        open={loginPromptOpen}
+        onOpenChange={setLoginPromptOpen}
+        title="Cần đăng nhập"
+        description="Bạn cần đăng nhập để lưu vé vào tài khoản và nhận mã Dynamic QR check-in."
+        confirmLabel="Đăng nhập"
+        cancelLabel="Để sau"
+        onConfirm={() => {
+          setLoginPromptOpen(false);
+          navigate("/login");
+        }}
       />
     </div>
   );

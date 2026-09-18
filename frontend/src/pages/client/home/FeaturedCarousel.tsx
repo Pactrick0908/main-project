@@ -43,20 +43,52 @@ function FeaturedCarousel({
       )
       .then((res) => {
         if (!isMounted) return;
-        const dbItems: FeaturedEvent[] = (res.data?.events ?? []).map((e) => ({
-          id: e.id,
-          title: e.title,
-          artist: e.artist,
-          category: e.category || "Concert",
-          image: e.bannerImage || e.thumbnail,
-          date: e.date,
-          location: e.venue,
-          priceRange: e.priceRange || "Liên hệ",
-          officialLink: `/events/${e.id}`,
-          ticketsAvailable: e.ticketsAvailable,
-          passCount: e.passCount || 0,
-          tag: tag || (featured ? "Nổi bật" : "Sắp diễn ra"),
-        }));
+        const dbItems: FeaturedEvent[] = (res.data?.events ?? []).map((e) => {
+          const opened =
+            typeof e.saleOpened === "boolean"
+              ? e.saleOpened
+              : !e.saleOpensAt || new Date(e.saleOpensAt) <= new Date();
+          const soldOut = Boolean(e.soldOut);
+          const ticketsAvailable =
+            typeof e.ticketsAvailable === "boolean"
+              ? e.ticketsAvailable
+              : Boolean(e.salesOpen) && !soldOut;
+
+          return {
+            id: e.id,
+            title: e.title,
+            artist: e.artist || e.organizer || "Ban tổ chức",
+            category: e.category || "Concert",
+            image:
+              e.bannerImage ||
+              e.bannerUrl ||
+              e.thumbnail ||
+              "https://placehold.co/800x450",
+            date: e.date || "Chưa cập nhật",
+            location:
+              e.location ||
+              e.venue ||
+              [e.place?.name, e.place?.city].filter(Boolean).join(", ") ||
+              "—",
+            priceRange: e.priceRange || "Liên hệ",
+            officialLink: `/events/${e.id}`,
+            ticketsAvailable,
+            saleOpened: opened,
+            soldOut,
+            saleOpensAt: e.saleOpensAt ?? null,
+            passCount: e.passCount || 0,
+            tag:
+              tag ||
+              (featured
+                ? "Nổi bật"
+                : ticketsAvailable
+                  ? "Còn vé"
+                  : !opened
+                    ? "Sắp mở bán"
+                    : "Sắp diễn ra"),
+            status: e.status,
+          };
+        });
         setItems(dbItems);
       })
       .catch((err) => {

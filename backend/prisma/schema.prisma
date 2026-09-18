@@ -121,6 +121,8 @@ model Event {
   logoUrl       String?  @map("logo_url") @db.VarChar(500)
   ticketId      String?  @map("ticket_id") @db.VarChar(100)
   status        String?  @default("draft") @db.VarChar(20) //draft upcoming open ended
+  /** Thời điểm mở bán vé chính thức */
+  saleOpensAt   DateTime? @map("sale_opens_at") @db.Timestamp(6)
   /** Bật thì hiện trên block Sự kiện nổi bật trang chủ */
   isFeatured    Boolean  @default(false) @map("is_featured")
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)

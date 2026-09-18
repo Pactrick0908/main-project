@@ -116,6 +116,13 @@ export class WebhookService {
       return { success: true, message: "Order not found, ignored" };
     }
 
+    if (order.status === "CANCELLED") {
+      return {
+        success: true,
+        message: "Order cancelled — webhook ignored",
+      };
+    }
+
     const fulfillResult = await OrderService.markPaidAndFulfill(order.id);
 
     return {
