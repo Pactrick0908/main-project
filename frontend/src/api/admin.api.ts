@@ -49,6 +49,7 @@ export type AdminEventEditPolicy = {
   canChangePrice: boolean;
   canModifyZones: boolean;
   canAddZone: boolean;
+  canDecreaseSeats: boolean;
   canDeleteEvent: boolean;
   canChangeStatus: boolean;
   reason: string;
@@ -98,31 +99,44 @@ export type AdminEvent = {
     role?: string;
   }>;
   artist?: string;
+  isFeatured?: boolean;
+};
+
+export type AdminWalletStatus = {
+  configured: boolean;
+  reachable: boolean;
+  address: string | null;
+  solBalance: number;
+  estimatedTickets: number;
+  costPerTicket: number;
+  status: "safe" | "low" | "critical" | "unknown";
+  cluster?: string;
+  explorerUrl?: string | null;
+  error?: string;
+};
+
+export type DashboardEventOption = {
+  id: number;
+  title: string;
+  status: string;
+};
+
+export type RevenuePoint = {
+  key: string;
+  label: string;
+  revenue: number;
 };
 
 export type DashboardStats = {
+  eventId: number | null;
   soldTickets: number;
   checkedIn: number;
-  revoked: number;
   checkInRate: number;
-  eventsActive: number;
-  eventsTotal: number;
   revenue: number;
-  systemRevenue: number;
-  paidOrders: number;
-  orderRevenue: number;
-  recentTickets: Array<{
-    id: number;
-    status: string | null;
-    ownerWallet: string | null;
-    checkedInAt: string | null;
-    isCheckedIn: boolean;
-    event: { id: number; title: string };
-    zoneName: string;
-    price: number;
-    ownerName: string | null;
-    ownerEmail: string | null;
-  }>;
+  events: DashboardEventOption[];
+  revenueByMonth: RevenuePoint[];
+  revenueByYear: RevenuePoint[];
+  wallet?: AdminWalletStatus | null;
 };
 
 async function api<T>(
@@ -168,8 +182,10 @@ export const adminApi = {
     }>("/admin/upload", { method: "POST", body: form });
   },
 
-  dashboard: () =>
-    api<{ success: boolean; data: DashboardStats }>("/admin/dashboard"),
+  dashboard: (eventId?: number) =>
+    api<{ success: boolean; data: DashboardStats }>(
+      `/admin/dashboard${eventId ? `?eventId=${eventId}` : ""}`,
+    ),
 
   listTickets: (q?: string) =>
     api<{ success: boolean; data: { tickets: TicketDto[] } }>(
@@ -331,6 +347,7 @@ export const adminApi = {
     startTime?: string;
     endTime?: string;
     artistIds?: number[];
+    isFeatured?: boolean;
     zones: Array<{
       zoneId?: number;
       name: string;
@@ -356,6 +373,20 @@ export const adminApi = {
       mapUrl: string;
       logoUrl: string;
       status: string;
+      isFeatured: boolean;
+      placeId: number;
+      startTime: string;
+      endTime: string;
+      zones: Array<{
+        eventZoneId?: number;
+        zoneId?: number;
+        name: string;
+        price: number;
+        totalSeats: number;
+        hasSeats?: boolean;
+        rowCount?: number;
+        generateSeats?: boolean;
+      }>;
     }>,
   ) =>
     api<{ success: boolean; data: { event: AdminEvent } }>(`/events/${id}`, {

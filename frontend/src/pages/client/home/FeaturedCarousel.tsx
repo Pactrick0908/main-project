@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Star } from "lucide-react";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import {
   Carousel,
   CarouselContent,
@@ -12,17 +13,34 @@ import type { FeaturedEvent } from "../../../pages/client/home/FeaturedCard";
 import FeaturedCard from "../../../pages/client/home/FeaturedCard";
 import { eventApi } from "@/api/event.api";
 
-function FeaturedCarousel() {
+type FeaturedCarouselProps = {
+  heading?: string;
+  status?: string;
+  featured?: boolean;
+  tag?: string;
+  hideWhenEmpty?: boolean;
+};
+
+function FeaturedCarousel({
+  heading = "Sắp diễn ra",
+  status,
+  featured = false,
+  tag,
+  hideWhenEmpty = false,
+}: FeaturedCarouselProps) {
   const [api, setApi] = useState<CarouselApi>();
   const [isHovered, setIsHovered] = useState(false);
   const [items, setItems] = useState<FeaturedEvent[]>([]);
   const [loaded, setLoaded] = useState(false);
 
-  // Chỉ sự kiện upcoming trên carousel
   useEffect(() => {
     let isMounted = true;
     eventApi
-      .listEvents({ status: "upcoming" })
+      .listEvents(
+        featured
+          ? { featured: true }
+          : { status: status || "upcoming" },
+      )
       .then((res) => {
         if (!isMounted) return;
         const dbItems: FeaturedEvent[] = (res.data?.events ?? []).map((e) => ({
@@ -37,7 +55,7 @@ function FeaturedCarousel() {
           officialLink: `/events/${e.id}`,
           ticketsAvailable: e.ticketsAvailable,
           passCount: e.passCount || 0,
-          tag: "Sắp diễn ra",
+          tag: tag || (featured ? "Nổi bật" : "Sắp diễn ra"),
         }));
         setItems(dbItems);
       })
@@ -52,7 +70,7 @@ function FeaturedCarousel() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [featured, status, tag]);
 
   // Tự động next sau mỗi 3.5s và lặp vô tận (loop: true)
   useEffect(() => {
@@ -65,22 +83,25 @@ function FeaturedCarousel() {
     return () => clearInterval(timer);
   }, [api, isHovered]);
 
+  if (hideWhenEmpty && loaded && items.length === 0) return null;
+
   return (
     <section className="border-b border-zinc-800/60">
       <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-12 lg:px-8">
-        {/* SECTION LABEL */}
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Star className="h-4 w-4 text-[#F97316]" />
-            <h2 className="text-base font-semibold text-white">
-              Sắp diễn ra
-            </h2>
+            <h2 className="text-base font-semibold text-white">{heading}</h2>
           </div>
         </div>
 
-        {items.length === 0 ? (
+        {!loaded ? (
+          <LoadingSpinner label="Đang tải sự kiện…" />
+        ) : items.length === 0 ? (
           <p className="py-10 text-center text-sm text-zinc-500">
-            {loaded ? "Chưa có sự kiện sắp diễn ra." : "Đang tải sự kiện…"}
+            {featured
+              ? "Chưa có sự kiện nổi bật."
+              : "Chưa có sự kiện sắp diễn ra."}
           </p>
         ) : (
         <div

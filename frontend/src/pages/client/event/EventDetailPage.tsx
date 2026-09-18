@@ -13,7 +13,8 @@ import {
   type DetailedEvent,
   type EventArtist,
 } from "@/data/events.data";
-import { getResaleTicketsByEventId } from "@/pages/client/market/marketplace.data";
+import { listingToTicket, marketplaceApi } from "@/api/marketplace.api";
+import type { MarketplaceTicket } from "@/pages/client/market/marketplace.data";
 import { useAuth } from "@/context/AuthContext";
 import { ticketApi } from "@/api/ticket.api";
 import { eventApi } from "@/api/event.api";
@@ -25,6 +26,7 @@ import SeatSelectionBoard, {
 import StadiumOverviewMap from "./StadiumOverviewMap";
 import ZoneTicketSelector from "./ZoneTicketSelector";
 import { toast } from "@/lib/toast";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 
 export default function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -34,7 +36,7 @@ export default function EventDetailPage() {
   const eventId = id ? parseInt(id, 10) : 1;
   const initialEvent = EVENTS_DATA[eventId] || EVENTS_DATA[1];
   const [event, setEvent] = useState<DetailedEvent>(initialEvent);
-  const [, setIsLoadingEvent] = useState(false);
+  const [isLoadingEvent, setIsLoadingEvent] = useState(true);
 
   // Số lượng vé cho từng zone: { [zoneId]: quantity }
   const [selectedQuantities, setSelectedQuantities] = useState<
@@ -179,9 +181,23 @@ export default function EventDetailPage() {
     document.body.scrollTop = 0;
   }, [eventId]);
 
-  // Danh sách vé pass lại từ cộng đồng
-  const resaleTickets = useMemo(() => {
-    return getResaleTicketsByEventId(eventId);
+  const [resaleTickets, setResaleTickets] = useState<MarketplaceTicket[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    marketplaceApi
+      .listListings({ eventId })
+      .then((res) => {
+        if (!cancelled) {
+          setResaleTickets((res.data.listings ?? []).map(listingToTicket));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setResaleTickets([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [eventId]);
 
   // Modals state
@@ -521,6 +537,16 @@ export default function EventDetailPage() {
     }
   };
 
+  if (isLoadingEvent) {
+    return (
+      <LoadingSpinner
+        label="Đang tải sự kiện…"
+        size="lg"
+        className="min-h-[70vh]"
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#090A0F] text-zinc-100 py-6 px-4 sm:px-6 lg:px-8">
       {/* Top Navigation */}
@@ -559,7 +585,7 @@ export default function EventDetailPage() {
               <div className="text-zinc-400 text-xs mt-0.5">
                 Giá chỉ từ{" "}
                 <span className="font-extrabold text-emerald-400">
-                  {resaleTickets[0].passPrice}
+                  {resaleTickets[0]?.passPrice}
                 </span>{" "}
                 · Bảo chứng 100% qua hệ thống ký quỹ trung gian
               </div>

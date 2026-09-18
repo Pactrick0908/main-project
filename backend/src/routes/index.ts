@@ -5,6 +5,7 @@ import OrderRouter from "./order.routes.js";
 import WebhookRouter from "./webhook.routes.js";
 import EventRouter from "./event.routes.js";
 import AdminRouter from "./admin.routes.js";
+import MarketplaceRouter from "./marketplace.routes.js";
 
 const router = Router();
 router.use("/auth", AuthRouter);
@@ -13,5 +14,6 @@ router.use("/orders", OrderRouter);
 router.use("/webhook", WebhookRouter);
 router.use("/events", EventRouter);
 router.use("/admin", AdminRouter);
+router.use("/marketplace", MarketplaceRouter);
 
 export default router;

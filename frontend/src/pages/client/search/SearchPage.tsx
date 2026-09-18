@@ -10,6 +10,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { eventApi, type EventDto } from "@/api/event.api";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import UpcomingCard, {
   type UpcomingEvent,
 } from "@/pages/client/home/UpcomingCard";
@@ -224,9 +225,7 @@ export default function SearchPage() {
               </div>
 
               {loading ? (
-                <p className="py-8 text-center text-xs text-zinc-500">
-                  Đang tìm kiếm…
-                </p>
+                <LoadingSpinner label="Đang tìm kiếm…" className="min-h-[8rem]" />
               ) : totalHits === 0 ? (
                 <p className="py-8 text-center text-xs text-zinc-500">
                   Không tìm thấy concert hay nghệ sĩ phù hợp.

@@ -6,7 +6,12 @@ export const listEvents = async (req: Request, res: Response) => {
   try {
     const status =
       typeof req.query.status === "string" ? req.query.status : undefined;
-    const events = await EventService.list(status);
+    const featuredRaw = req.query.featured;
+    const featuredOnly =
+      featuredRaw === "1" ||
+      featuredRaw === "true" ||
+      featuredRaw === "yes";
+    const events = await EventService.list(status, featuredOnly);
     return res.json({ success: true, data: { events } });
   } catch (error) {
     console.error("listEvents:", error);

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Wallet, RefreshCw, Loader2 } from "lucide-react";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import DynamicQRModal from "@/pages/client/ticket/DynamicQRModal";
 import { clearSession, getStoredUser, getToken } from "@/api/auth.api";
 import { ticketApi, type TicketDto } from "@/api/ticket.api";
@@ -224,9 +225,7 @@ export default function MyTicketsPage() {
         )}
 
         {syncing && !confirmingPayment && (
-          <p className="text-center text-sm text-white/50">
-            Đang mở ví và kéo vé xuống…
-          </p>
+          <LoadingSpinner label="Đang mở ví và kéo vé xuống…" />
         )}
 
         {error && (

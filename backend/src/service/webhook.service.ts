@@ -1,6 +1,7 @@
 import { payOS } from "../config/payos.config.js";
 import { prisma } from "../lib/prisma.js";
 import { OrderService } from "./order.service.js";
+import { MarketplaceService } from "./marketplace.service.js";
 
 function isPayOSPaymentSuccess(webhookBody: any, verifiedData: any): boolean {
   if (webhookBody?.success === true) return true;
@@ -99,6 +100,18 @@ export class WebhookService {
     });
 
     if (!order) {
+      try {
+        const p2p = await MarketplaceService.fulfillPaidTrade(orderCode);
+        if (p2p) {
+          return {
+            success: true,
+            message: "Webhook processed — P2P trade fulfilled",
+            data: p2p,
+          };
+        }
+      } catch (err: any) {
+        console.warn(`⚠️ [Webhook P2P] #${orderCode}:`, err?.message);
+      }
       console.warn(`⚠️ Không tìm thấy Order với orderCode: ${orderCode}`);
       return { success: true, message: "Order not found, ignored" };
     }

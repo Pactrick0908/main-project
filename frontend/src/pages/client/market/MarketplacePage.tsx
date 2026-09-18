@@ -1,11 +1,10 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import {
-  MARKETPLACE_TICKETS,
   getConcertsWithResale,
   type MarketplaceTicket,
 } from "./marketplace.data";
+import { listingToTicket, marketplaceApi } from "@/api/marketplace.api";
 
-// Sub-components
 import MarketplaceHero from "./MarketplaceHero";
 import MarketplaceFilterBar from "./MarketplaceFilterBar";
 import MarketplaceCard from "./MarketplaceCard";
@@ -13,85 +12,91 @@ import ConcertResaleCard from "./ConcertResaleCard";
 import PostTicketModal from "./PostTicketModal";
 import BuyP2PModal from "./BuyP2PModal";
 import { Music, Ticket as TicketIcon } from "lucide-react";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 
 export default function MarketplacePage() {
-  const [viewMode, setViewMode] = useState<"concerts" | "all-tickets">("concerts");
-  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [viewMode, setViewMode] = useState<"concerts" | "all-tickets">(
+    "concerts",
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
-  // State Modals
+  const [tickets, setTickets] = useState<MarketplaceTicket[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [isListModalOpen, setIsListModalOpen] = useState(false);
-  const [selectedTicket, setSelectedTicket] = useState<MarketplaceTicket | null>(null);
+  const [selectedTicket, setSelectedTicket] =
+    useState<MarketplaceTicket | null>(null);
   const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
-  const [buySuccess, setBuySuccess] = useState(false);
 
-  // Danh sách concert có người pass
-  const concertSummaries = useMemo(() => {
-    return getConcertsWithResale();
-  }, []);
+  const loadListings = useCallback(async () => {
+    setError(null);
+    try {
+      const res = await marketplaceApi.listListings(
+        searchQuery.trim() ? { q: searchQuery.trim() } : undefined,
+      );
+      setTickets((res.data.listings ?? []).map(listingToTicket));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không tải được chợ vé");
+      setTickets([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [searchQuery]);
 
-  // Lọc concert
+  useEffect(() => {
+    setLoading(true);
+    void loadListings();
+  }, [loadListings]);
+
+  const concertSummaries = useMemo(
+    () => getConcertsWithResale(tickets),
+    [tickets],
+  );
+
   const filteredConcerts = useMemo(() => {
     return concertSummaries
       .filter((concert) => {
-        const matchCat =
-          selectedCategory === "all" ||
-          concert.category.toLowerCase().includes(selectedCategory.toLowerCase());
-        const matchSearch =
+        return (
           concert.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
           concert.artist.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          concert.location.toLowerCase().includes(searchQuery.toLowerCase());
-
-        return matchCat && matchSearch;
+          concert.location.toLowerCase().includes(searchQuery.toLowerCase())
+        );
       })
       .sort((a, b) => {
         return sortOrder === "asc"
           ? a.minPriceNumber - b.minPriceNumber
           : b.minPriceNumber - a.minPriceNumber;
       });
-  }, [concertSummaries, selectedCategory, searchQuery, sortOrder]);
+  }, [concertSummaries, searchQuery, sortOrder]);
 
-  // Lọc vé lẻ
   const filteredTickets = useMemo(() => {
-    return MARKETPLACE_TICKETS.filter((ticket) => {
-      const matchCat =
-        selectedCategory === "all" || ticket.category === selectedCategory;
-      const matchSearch =
-        ticket.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        ticket.artist.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        ticket.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        ticket.seller.toLowerCase().includes(searchQuery.toLowerCase());
-
-      return matchCat && matchSearch;
-    }).sort((a, b) => {
-      const pa = parseInt(a.passPrice.replace(/\D/g, ""), 10) || 0;
-      const pb = parseInt(b.passPrice.replace(/\D/g, ""), 10) || 0;
-      return sortOrder === "asc" ? pa - pb : pb - pa;
-    });
-  }, [selectedCategory, searchQuery, sortOrder]);
+    return tickets
+      .filter((ticket) => {
+        return (
+          ticket.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          ticket.artist.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          ticket.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          ticket.seller.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+      })
+      .sort((a, b) => {
+        const pa = parseInt(a.passPrice.replace(/\D/g, ""), 10) || 0;
+        const pb = parseInt(b.passPrice.replace(/\D/g, ""), 10) || 0;
+        return sortOrder === "asc" ? pa - pb : pb - pa;
+      });
+  }, [tickets, searchQuery, sortOrder]);
 
   const handleOpenBuy = (ticket: MarketplaceTicket) => {
     setSelectedTicket(ticket);
     setIsBuyModalOpen(true);
-    setBuySuccess(false);
-  };
-
-  const handleConfirmBuy = () => {
-    setBuySuccess(true);
-    setTimeout(() => {
-      setIsBuyModalOpen(false);
-      setBuySuccess(false);
-      setSelectedTicket(null);
-    }, 1800);
   };
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 min-h-screen">
-      {/* 1. Header Hero */}
       <MarketplaceHero onOpenListModal={() => setIsListModalOpen(true)} />
 
-      {/* 2. View Mode Tabs */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800 pb-4">
         <div className="flex items-center gap-2">
           <button
@@ -117,7 +122,7 @@ export default function MarketplacePage() {
             }`}
           >
             <TicketIcon className="h-3.5 w-3.5" />
-            Tất cả người pass ({MARKETPLACE_TICKETS.length} vé)
+            Tất cả người pass ({tickets.length} vé)
           </button>
         </div>
 
@@ -128,21 +133,25 @@ export default function MarketplacePage() {
         </div>
       </div>
 
-      {/* 3. Filter Bar */}
       <MarketplaceFilterBar
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        selectedCategory={selectedCategory}
-        onSelectCategory={setSelectedCategory}
         sortOrder={sortOrder}
         onToggleSort={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
       />
 
-      {/* 4. Display according to viewMode */}
-      {viewMode === "concerts" ? (
+      {loading ? (
+        <LoadingSpinner label="Đang tải chợ vé…" className="min-h-[16rem]" />
+      ) : error ? (
+        <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-8 text-center text-sm text-red-400">
+          {error}
+        </div>
+      ) : viewMode === "concerts" ? (
         filteredConcerts.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-zinc-800 p-12 text-center">
-            <p className="text-zinc-400 text-sm">Không tìm thấy concert nào phù hợp</p>
+            <p className="text-zinc-400 text-sm">
+              Chưa có concert nào đang được pass vé
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -151,37 +160,33 @@ export default function MarketplacePage() {
             ))}
           </div>
         )
+      ) : filteredTickets.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-zinc-800 p-12 text-center">
+          <p className="text-zinc-400 text-sm">Chưa có vé pass nào phù hợp</p>
+        </div>
       ) : (
-        filteredTickets.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-zinc-800 p-12 text-center">
-            <p className="text-zinc-400 text-sm">Không tìm thấy vé phù hợp</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredTickets.map((ticket) => (
-              <MarketplaceCard
-                key={ticket.id}
-                ticket={ticket}
-                onSelectBuy={handleOpenBuy}
-              />
-            ))}
-          </div>
-        )
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredTickets.map((ticket) => (
+            <MarketplaceCard
+              key={ticket.id}
+              ticket={ticket}
+              onSelectBuy={handleOpenBuy}
+            />
+          ))}
+        </div>
       )}
 
-      {/* 5. Modals */}
       <PostTicketModal
         isOpen={isListModalOpen}
         onClose={() => setIsListModalOpen(false)}
-        onSuccess={() => {}}
+        onSuccess={() => void loadListings()}
       />
 
       <BuyP2PModal
         ticket={selectedTicket}
         isOpen={isBuyModalOpen}
         onClose={() => setIsBuyModalOpen(false)}
-        onConfirmBuy={handleConfirmBuy}
-        isSuccess={buySuccess}
+        onPurchased={() => void loadListings()}
       />
     </div>
   );

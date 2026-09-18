@@ -6,6 +6,12 @@ import HowItWorksSection from "./HowItWorksSection";
 export default function HomePage() {
   return (
     <div>
+      <FeaturedCarousel
+        heading="Sự kiện nổi bật"
+        featured
+        tag="Nổi bật"
+        hideWhenEmpty
+      />
       <FeaturedCarousel />
       <StarsSection />
       <UpcomingSection />

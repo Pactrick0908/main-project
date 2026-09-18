@@ -44,7 +44,7 @@ router.get("/rbac/catalog", requireAuth, getRbacCatalog);
 router.post("/roles/assign", requireAuth, assignRole);
 router.post("/roles/revoke", requireAuth, revokeRole);
 
-router.get("/dashboard", getDashboard);
+router.get("/dashboard", requireAuth, getDashboard);
 router.get("/tickets", listAdminTickets);
 router.post("/tickets/:id/check-in", manualCheckIn);
 router.post("/tickets/:id/revoke", revokeTicket);

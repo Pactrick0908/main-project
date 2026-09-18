@@ -7,6 +7,7 @@ import { fileURLToPath } from "url";
 import router from "./routes/index.js";
 import { prisma } from "./lib/prisma.js";
 import { seedRbac } from "./rbac/rbac.seed.js";
+import { ensureMarketplaceSchema } from "./service/ensureMarketplaceSchema.js";
 import { registerPayOSWebhook } from "./config/payos.config.js";
 dotenv.config();
 
@@ -46,6 +47,11 @@ const server = app.listen(PORT, async () => {
         "⚠️ [RBAC] Chưa seed được (chạy npx prisma db push):",
         seedErr?.message,
       );
+    }
+    try {
+      await ensureMarketplaceSchema();
+    } catch (mktErr: any) {
+      console.warn("⚠️ [Marketplace] Chưa tạo bảng P2P:", mktErr?.message);
     }
   } catch (error) {
     console.error("Không kết nối được database:", error);

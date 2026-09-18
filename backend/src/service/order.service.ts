@@ -329,6 +329,7 @@ export class OrderService {
               ownerWallet,
               status: "sold",
               mintAddress: ticketCode,
+              originalOrderId: order.id,
             },
           });
           createdIds.push(ticket.id);

@@ -2,6 +2,8 @@ import { getToken } from "./auth.api";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "/api/v1";
 
+import type { MarketplaceTicket } from "@/pages/client/market/marketplace.data";
+
 export type MarketplaceListingDto = {
   id: number;
   listingId: number;
@@ -68,6 +70,29 @@ async function api<T>(
     });
   }
   return body as T;
+}
+
+export function listingToTicket(dto: MarketplaceListingDto): MarketplaceTicket {
+  return {
+    id: dto.listingId,
+    listingId: dto.listingId,
+    ticketId: dto.ticketId,
+    eventId: dto.eventId,
+    title: dto.title,
+    category: dto.category,
+    artist: dto.artist,
+    image: dto.image,
+    date: dto.date,
+    location: dto.location,
+    seatZone: dto.seatZone,
+    seller: dto.seller,
+    sellerAvatar: dto.sellerAvatar,
+    sellerNote: dto.sellerNote,
+    originalPrice: dto.originalPrice,
+    passPrice: dto.passPrice,
+    verified: dto.verified,
+    createdAt: dto.createdAt,
+  };
 }
 
 export const marketplaceApi = {

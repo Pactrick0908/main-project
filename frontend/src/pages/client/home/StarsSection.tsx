@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Mic2, ChevronRight, Star } from "lucide-react";
 import { eventApi } from "@/api/event.api";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 
 type StarArtist = {
   id: number;
@@ -62,14 +63,7 @@ export default function StarsSection() {
         </div>
 
         {loading ? (
-          <div className="flex gap-4 overflow-hidden">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div
-                key={i}
-                className="h-36 w-28 shrink-0 animate-pulse rounded-2xl bg-zinc-900"
-              />
-            ))}
-          </div>
+          <LoadingSpinner label="Đang tải nghệ sĩ…" />
         ) : (
           <div className="flex gap-3 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:grid-cols-4 sm:gap-4 sm:overflow-visible md:grid-cols-6">
             {stars.map((a) => {

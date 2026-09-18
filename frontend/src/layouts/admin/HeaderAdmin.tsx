@@ -3,6 +3,7 @@ import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useAuth } from "@/context/AuthContext";
 import type { ConfirmModalState } from "@/pages/admin/adminShared";
 import NotFoundPage from "@/pages/NotFoundPage";
@@ -104,12 +105,15 @@ export function AdminPageShell({
               {error}
             </div>
           )}
-          {loading && (
-            <div className="rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
-              Đang đồng bộ dữ liệu vận hành…
-            </div>
+          {loading ? (
+            <LoadingSpinner
+              label="Đang tải dữ liệu…"
+              className="min-h-[50vh]"
+              size="lg"
+            />
+          ) : (
+            children
           )}
-          {children}
         </main>
       </div>
     </AdminAuthGate>

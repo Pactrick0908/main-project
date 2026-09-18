@@ -66,7 +66,7 @@ export class TicketService {
           { ownerWallet: walletAddress },
           ...(userId ? [{ userId }] : []),
         ],
-        status: { in: ["sold", "checked_in", "valid"] },
+        status: { in: ["sold", "checked_in", "valid", "listed"] },
       },
       include: ticketInclude,
       orderBy: { id: "desc" },

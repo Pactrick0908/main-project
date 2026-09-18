@@ -3,15 +3,23 @@ import { AdminService } from "../service/admin.service.js";
 
 export const getDashboard = async (req: Request, res: Response) => {
   try {
-    const organizerId =
-      req.auth?.role === "organizer" && req.auth.userId
-        ? req.auth.userId
-        : undefined;
-    const stats = await AdminService.getDashboard(organizerId);
+    const role = (req.auth?.role ?? "").toLowerCase();
+    const isOrganizer = role === "organizer";
+    const rawEventId = Number(req.query.eventId);
+    const eventId =
+      Number.isInteger(rawEventId) && rawEventId > 0 ? rawEventId : undefined;
+    const stats = await AdminService.getDashboard({
+      organizerId:
+        isOrganizer && req.auth?.userId ? req.auth.userId : undefined,
+      eventId: isOrganizer ? undefined : eventId,
+      includeWallet: role === "admin",
+    });
     return res.json({ success: true, data: stats });
-  } catch (error) {
+  } catch (error: any) {
     console.error("getDashboard:", error);
-    return res.status(500).json({ success: false, message: "Lỗi tải dashboard" });
+    return res
+      .status(error?.status ?? 500)
+      .json({ success: false, message: error?.message ?? "Lỗi tải dashboard" });
   }
 };
 

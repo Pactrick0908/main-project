@@ -52,6 +52,19 @@ function serializeListing(
       .filter(Boolean)
       .join(", ") || event.organizerName || "Nghệ sĩ";
 
+  const genre = String(
+    event.eventArtists?.[0]?.artist?.genre ?? "",
+  ).toLowerCase();
+  const category = genre.includes("kpop") || genre.includes("k-pop")
+    ? "kpop"
+    : genre.includes("rap") || genre.includes("hip")
+      ? "rap"
+      : genre.includes("indie") || genre.includes("rock")
+        ? "indie"
+        : genre.includes("edm") || genre.includes("festival")
+          ? "edm"
+          : "vpop";
+
   const dateStr = schedule
     ? `${schedule.startTime.toLocaleTimeString("vi-VN", {
         hour: "2-digit",
@@ -74,7 +87,7 @@ function serializeListing(
     ticketId: ticket.id,
     eventId: event.id,
     title: event.title,
-    category: "concert",
+    category,
     artist: artistNames,
     image:
       event.bannerUrl ||

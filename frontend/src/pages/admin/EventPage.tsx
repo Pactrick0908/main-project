@@ -13,6 +13,7 @@ import {
   Lock,
   Mic2,
   X,
+  Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,71 +50,99 @@ import { ImageUpload } from "@/components/ui/image-upload";
 import { toast } from "@/lib/toast";
 
 function resolvePolicy(evt: AdminEvent): AdminEventEditPolicy {
-  if (evt.editPolicy) return evt.editPolicy;
   const status = (
     evt.status === "active" || evt.status === "published"
       ? "open"
-      : evt.status === "completed"
+      : evt.status === "completed" || evt.status === "finished"
         ? "ended"
         : evt.status
   ) as AdminEventEditPolicy["status"];
   const hasBookings = (evt.soldTickets ?? 0) > 0;
-  if (status === "ended") {
-    return {
-      status,
-      hasBookings,
-      canEditAll: false,
-      canEditMarketing: false,
-      canEditSensitive: false,
-      canChangePlace: false,
-      canChangePrice: false,
-      canModifyZones: false,
-      canAddZone: false,
-      canDeleteEvent: false,
-      canChangeStatus: false,
-      reason: "Đã kết thúc — read-only.",
-    };
-  }
-  if (status === "draft" || (status === "upcoming" && !hasBookings)) {
-    return {
-      status,
-      hasBookings,
-      canEditAll: true,
-      canEditMarketing: true,
-      canEditSensitive: true,
-      canChangePlace: true,
-      canChangePrice: true,
-      canModifyZones: true,
-      canAddZone: true,
-      canDeleteEvent: true,
-      canChangeStatus: true,
-      reason: "Được sửa Full.",
-    };
-  }
+  const fallback: AdminEventEditPolicy =
+    status === "ended"
+      ? {
+          status,
+          hasBookings,
+          canEditAll: false,
+          canEditMarketing: false,
+          canEditSensitive: false,
+          canChangePlace: false,
+          canChangePrice: false,
+          canModifyZones: false,
+          canAddZone: false,
+          canDecreaseSeats: false,
+          canDeleteEvent: false,
+          canChangeStatus: false,
+          reason: "Đã kết thúc — không được sửa gì.",
+        }
+      : status === "draft"
+        ? {
+            status,
+            hasBookings,
+            canEditAll: true,
+            canEditMarketing: true,
+            canEditSensitive: true,
+            canChangePlace: true,
+            canChangePrice: true,
+            canModifyZones: true,
+            canAddZone: true,
+            canDecreaseSeats: true,
+            canDeleteEvent: true,
+            canChangeStatus: true,
+            reason: "Nháp — được sửa Full.",
+          }
+        : status === "upcoming"
+          ? {
+              status,
+              hasBookings,
+              canEditAll: false,
+              canEditMarketing: true,
+              canEditSensitive: true,
+              canChangePlace: false,
+              canChangePrice: false,
+              canModifyZones: true,
+              canAddZone: true,
+              canDecreaseSeats: true,
+              canDeleteEvent: false,
+              canChangeStatus: true,
+              reason: "Sắp diễn ra — sửa Full trừ địa điểm và giá vé.",
+            }
+          : {
+              status,
+              hasBookings,
+              canEditAll: false,
+              canEditMarketing: true,
+              canEditSensitive: true,
+              canChangePlace: false,
+              canChangePrice: false,
+              canModifyZones: true,
+              canAddZone: true,
+              canDecreaseSeats: false,
+              canDeleteEvent: false,
+              canChangeStatus: true,
+              reason:
+                "Đang mở bán — sửa Full trừ địa điểm và giá; không giảm số ghế (được tăng).",
+            };
+  if (!evt.editPolicy) return fallback;
   return {
-    status,
-    hasBookings,
-    canEditAll: false,
-    canEditMarketing: true,
-    canEditSensitive: false,
-    canChangePlace: false,
-    canChangePrice: false,
-    canModifyZones: false,
-    canAddZone: true,
-    canDeleteEvent: false,
-    canChangeStatus: true,
-    reason: "Chỉ sửa truyền thông; khóa địa điểm / zone / giá.",
+    ...fallback,
+    ...evt.editPolicy,
+    canDecreaseSeats:
+      evt.editPolicy.canDecreaseSeats ?? fallback.canDecreaseSeats,
   };
 }
 
 type ZoneDraft = {
   key: string;
+  eventZoneId?: number;
   zoneId?: number;
   name: string;
   price: string;
   totalSeats: string;
   rowCount: string;
   hasSeats: boolean;
+  soldTickets?: number;
+  originalSeats?: number;
 };
 
 const DEFAULT_ZONES: ZoneDraft[] = [
@@ -194,6 +223,18 @@ function formatScheduleLabel(iso: string): string {
   return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
 }
 
+function partsFromIso(iso?: string): { date: string; time: string } {
+  if (!iso) return { date: "", time: "18:00" };
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return { date: "", time: "18:00" };
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return { date: `${dd}/${mm}/${yyyy}`, time: `${hh}:${mi}` };
+}
+
 export default function EventPage() {
   const { isAuthenticated, staffRole, user } = useAuth();
 
@@ -226,6 +267,7 @@ export default function EventPage() {
     bannerUrl: "",
     mapUrl: "",
     placeId: "",
+    isFeatured: false,
   });
   const [zoneDrafts, setZoneDrafts] = useState<ZoneDraft[]>(DEFAULT_ZONES);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -238,7 +280,14 @@ export default function EventPage() {
     bannerUrl: "",
     mapUrl: "",
     logoUrl: "",
+    isFeatured: false,
+    placeId: "",
+    startDate: "",
+    startTime: "18:00",
+    endDate: "",
+    endTime: "23:00",
   });
+  const [editZones, setEditZones] = useState<ZoneDraft[]>([]);
   const [editSaving, setEditSaving] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -429,6 +478,7 @@ export default function EventPage() {
         startTime: startIso,
         endTime: endIso,
         artistIds: selectedArtistIds,
+        isFeatured: newEvent.isFeatured,
         zones: zoneDrafts.map((z) => ({
           ...(z.zoneId ? { zoneId: z.zoneId } : {}),
           name: z.name.trim(),
@@ -456,6 +506,7 @@ export default function EventPage() {
         bannerUrl: "",
         mapUrl: "",
         placeId: "",
+        isFeatured: false,
       });
       setZoneDrafts(
         DEFAULT_ZONES.map((z) => ({ ...z, key: `${z.key}-${Date.now()}` })),
@@ -520,6 +571,8 @@ export default function EventPage() {
       toast.error("Không thể sửa", policy.reason);
       return;
     }
+    const start = partsFromIso(evt.schedules?.[0]?.startTime);
+    const end = partsFromIso(evt.schedules?.[0]?.endTime);
     setEditing(evt);
     setEditForm({
       title: evt.title || "",
@@ -528,11 +581,124 @@ export default function EventPage() {
       bannerUrl: evt.bannerUrl || "",
       mapUrl: evt.mapUrl || "",
       logoUrl: evt.logoUrl || "",
+      isFeatured: Boolean(evt.isFeatured),
+      placeId: evt.place?.id ? String(evt.place.id) : "",
+      startDate: start.date,
+      startTime: start.time,
+      endDate: end.date,
+      endTime: end.time,
     });
+    setEditZones(
+      (evt.zones || []).map((z, i) => ({
+        key: `ez-${z.id}-${i}`,
+        eventZoneId: z.id,
+        zoneId: z.zoneId,
+        name: z.name,
+        price: String(z.price ?? 0),
+        totalSeats: String(z.totalSeats ?? 0),
+        rowCount: z.hasSeats ? String(z.rowCount || 10) : "",
+        hasSeats: Boolean(z.hasSeats),
+        soldTickets: z.soldTickets ?? 0,
+        originalSeats: z.totalSeats ?? 0,
+      })),
+    );
+  };
+
+  const updateEditZone = (key: string, patch: Partial<ZoneDraft>) => {
+    setEditZones((rows) =>
+      rows.map((r) => (r.key === key ? { ...r, ...patch } : r)),
+    );
+  };
+
+  const addEditZone = () => {
+    setEditZones((rows) => [
+      ...rows,
+      {
+        key: `ez-new-${Date.now()}`,
+        name: "",
+        price: "1000000",
+        totalSeats: "100",
+        rowCount: "10",
+        hasSeats: true,
+        soldTickets: 0,
+      },
+    ]);
+  };
+
+  const removeEditZone = (key: string) => {
+    const policy = editing ? resolvePolicy(editing) : null;
+    setEditZones((rows) => {
+      const target = rows.find((r) => r.key === key);
+      if (!target) return rows;
+      if ((target.soldTickets ?? 0) > 0) return rows;
+      if (!policy?.canDecreaseSeats && target.eventZoneId) return rows;
+      return rows.length <= 1 ? rows : rows.filter((r) => r.key !== key);
+    });
+  };
+
+  const applyEditPlace = (placeId: string) => {
+    setEditForm((f) => ({ ...f, placeId }));
+    const place = places.find((p) => String(p.id) === placeId);
+    if (!place?.zones.length) return;
+    setEditZones((prev) =>
+      place.zones.map((z, i) => {
+        const matched = prev.find(
+          (d) => d.name.trim().toLowerCase() === z.name.trim().toLowerCase(),
+        );
+        return {
+          key: `pz-${z.id}-${i}`,
+          zoneId: z.id,
+          name: z.name,
+          price: matched?.price || "1500000",
+          totalSeats:
+            matched?.totalSeats || String(Math.max(z._count.seats || 50, 50)),
+          rowCount: z.hasSeats ? matched?.rowCount || "10" : "",
+          hasSeats: z.hasSeats,
+          soldTickets: 0,
+        };
+      }),
+    );
   };
 
   const handleSaveEdit = async () => {
     if (!editing) return;
+    const policy = resolvePolicy(editing);
+    const canPlaceZones =
+      policy.canChangePlace || policy.canModifyZones || policy.canAddZone;
+    if (canPlaceZones) {
+      for (const z of editZones) {
+        if (!z.name.trim()) {
+          toast.error("Mỗi khu vực cần có tên");
+          return;
+        }
+        if (!(Number(z.price) > 0) || !(Number(z.totalSeats) > 0)) {
+          toast.error(`Khu "${z.name}": giá và số ghế phải > 0`);
+          return;
+        }
+        if (
+          !policy.canDecreaseSeats &&
+          z.eventZoneId &&
+          z.originalSeats != null &&
+          Number(z.totalSeats) < z.originalSeats
+        ) {
+          toast.error(
+            `Khu "${z.name}": không giảm số ghế (hiện ${z.originalSeats}, chỉ được tăng)`,
+          );
+          return;
+        }
+        if (z.hasSeats) {
+          const rows = Number(z.rowCount);
+          if (!Number.isInteger(rows) || rows < 1) {
+            toast.error(`Khu "${z.name}" (có ghế) cần số hàng ≥ 1`);
+            return;
+          }
+        }
+      }
+    }
+
+    const startIso = toIsoFromVn(editForm.startDate, editForm.startTime);
+    const endIso = toIsoFromVn(editForm.endDate, editForm.endTime);
+
     setEditSaving(true);
     try {
       await adminApi.updateEvent(editing.id, {
@@ -542,6 +708,27 @@ export default function EventPage() {
         bannerUrl: editForm.bannerUrl.trim(),
         mapUrl: editForm.mapUrl.trim(),
         logoUrl: editForm.logoUrl.trim(),
+        isFeatured: editForm.isFeatured,
+        ...(policy.canChangePlace && editForm.placeId
+          ? { placeId: Number(editForm.placeId) }
+          : {}),
+        ...(policy.canEditSensitive && startIso && endIso
+          ? { startTime: startIso, endTime: endIso }
+          : {}),
+        ...(policy.canModifyZones || policy.canAddZone
+          ? {
+              zones: editZones.map((z) => ({
+                ...(z.eventZoneId ? { eventZoneId: z.eventZoneId } : {}),
+                ...(z.zoneId ? { zoneId: z.zoneId } : {}),
+                name: z.name.trim(),
+                price: Number(z.price),
+                totalSeats: Number(z.totalSeats),
+                hasSeats: z.hasSeats,
+                ...(z.hasSeats ? { rowCount: Number(z.rowCount) } : {}),
+                generateSeats: z.hasSeats,
+              })),
+            }
+          : {}),
       });
       setEditing(null);
       toast.success("Đã cập nhật sự kiện");
@@ -619,6 +806,34 @@ export default function EventPage() {
                     }
                     placeholder="Concert Solana Live 2026"
                   />
+                </div>
+
+                <div className="md:col-span-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setNewEvent((e) => ({
+                        ...e,
+                        isFeatured: !e.isFeatured,
+                      }))
+                    }
+                    className={cn(
+                      "flex h-9 w-full items-center justify-center gap-2 rounded-lg border px-3 text-xs font-medium transition-colors",
+                      newEvent.isFeatured
+                        ? "border-[#F97316]/50 bg-[#F97316]/10 text-[#F97316]"
+                        : "border-border bg-input/30 text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <Star
+                      className={cn(
+                        "size-3.5",
+                        newEvent.isFeatured && "fill-current",
+                      )}
+                    />
+                    {newEvent.isFeatured
+                      ? "Đang nổi bật trên trang chủ"
+                      : "Đưa lên block Sự kiện nổi bật"}
+                  </button>
                 </div>
 
                 <div className="space-y-1.5 md:col-span-2">
@@ -1239,7 +1454,15 @@ export default function EventPage() {
                 )}
                 <div className="absolute inset-0 bg-gradient-to-t from-card via-card/40 to-transparent" />
                 <div className="absolute bottom-3 left-4 right-4 flex items-end justify-between gap-2">
-                  <StatusBadge status={evt.status} />
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <StatusBadge status={evt.status} />
+                    {evt.isFeatured && (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-[#F97316] px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                        <Star className="size-2.5 fill-current" />
+                        Nổi bật
+                      </span>
+                    )}
+                  </div>
                   <span className="font-mono text-[10px] text-muted-foreground">
                     #{evt.id}
                   </span>
@@ -1347,7 +1570,7 @@ export default function EventPage() {
                   return (
                     <>
                       <p className="flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground">
-                        {!policy.canEditSensitive && (
+                        {!policy.canEditAll && (
                           <Lock className="mt-0.5 size-3 shrink-0" />
                         )}
                         {policy.reason}
@@ -1377,7 +1600,7 @@ export default function EventPage() {
                           disabled={!policy.canEditMarketing}
                           title={
                             policy.canEditMarketing
-                              ? "Sửa thông tin truyền thông"
+                              ? "Sửa sự kiện"
                               : policy.reason
                           }
                           onClick={() => openEdit(evt)}
@@ -1456,20 +1679,24 @@ export default function EventPage() {
         }}
         title="Sửa sự kiện"
         description={
-          editing
-            ? resolvePolicy(editing).canEditSensitive
-              ? "Được sửa thông tin hiển thị."
-              : "Chỉ truyền thông — địa điểm / zone / giá đã khóa."
-            : undefined
+          editing ? resolvePolicy(editing).reason : undefined
         }
-        size="md"
+        size="xl"
         confirmLabel="Lưu"
         confirmLoading={editSaving}
         onConfirm={() => void handleSaveEdit()}
         className="gap-3"
       >
-        {editing && (
-          <div className="grid max-h-[min(70vh,520px)] gap-2.5 overflow-y-auto pr-0.5">
+        {editing &&
+          (() => {
+            const policy = resolvePolicy(editing);
+            const lockPlace = !policy.canChangePlace;
+            const lockPrice = !policy.canChangePrice;
+            const lockDecrease = !policy.canDecreaseSeats;
+            const lockZones = !policy.canModifyZones;
+            const allowAdd = policy.canAddZone || policy.canModifyZones;
+            return (
+          <div className="grid max-h-[min(75vh,640px)] gap-3 overflow-y-auto pr-0.5">
             <div className="space-y-1">
               <label className="text-[11px] font-medium text-muted-foreground">
                 Tiêu đề
@@ -1482,6 +1709,28 @@ export default function EventPage() {
                 className="h-8"
               />
             </div>
+            <button
+              type="button"
+              onClick={() =>
+                setEditForm((f) => ({ ...f, isFeatured: !f.isFeatured }))
+              }
+              className={cn(
+                "flex h-8 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-medium transition-colors",
+                editForm.isFeatured
+                  ? "border-[#F97316]/50 bg-[#F97316]/10 text-[#F97316]"
+                  : "border-border bg-input/30 text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Star
+                className={cn(
+                  "size-3.5",
+                  editForm.isFeatured && "fill-current",
+                )}
+              />
+              {editForm.isFeatured
+                ? "Đang nổi bật trên trang chủ"
+                : "Đưa lên block Sự kiện nổi bật"}
+            </button>
             <div className="space-y-1">
               <label className="text-[11px] font-medium text-muted-foreground">
                 Mô tả
@@ -1506,6 +1755,238 @@ export default function EventPage() {
                 }
                 className="h-8"
               />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-muted-foreground">
+                Địa điểm
+              </label>
+              <select
+                value={editForm.placeId}
+                disabled={lockPlace}
+                onChange={(e) => applyEditPlace(e.target.value)}
+                className="h-8 w-full rounded-lg border border-input bg-input/30 px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {!editForm.placeId && (
+                  <option value="">— Chọn địa điểm —</option>
+                )}
+                {places.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    #{p.id} {p.name} ({p.city}) · {p.zones.length} khu
+                  </option>
+                ))}
+              </select>
+              {lockPlace && (
+                <p className="text-[10px] text-muted-foreground">
+                  {policy.status === "upcoming"
+                    ? "Sắp diễn ra — không đổi địa điểm."
+                    : "Đang mở bán — không đổi địa điểm."}
+                </p>
+              )}
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="space-y-1 rounded-lg border border-border bg-muted/20 p-2">
+                <p className="text-[10px] font-semibold">Bắt đầu</p>
+                <div className="grid grid-cols-[1.4fr_1fr] gap-1.5">
+                  <Input
+                    disabled={!policy.canEditSensitive}
+                    placeholder="dd/mm/yyyy"
+                    value={editForm.startDate}
+                    onChange={(e) =>
+                      setEditForm((f) => ({
+                        ...f,
+                        startDate: formatDateInput(e.target.value),
+                      }))
+                    }
+                    maxLength={10}
+                    className="h-8"
+                  />
+                  <Input
+                    type="time"
+                    disabled={!policy.canEditSensitive}
+                    value={editForm.startTime}
+                    onChange={(e) =>
+                      setEditForm((f) => ({ ...f, startTime: e.target.value }))
+                    }
+                    className="h-8"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1 rounded-lg border border-border bg-muted/20 p-2">
+                <p className="text-[10px] font-semibold">Kết thúc</p>
+                <div className="grid grid-cols-[1.4fr_1fr] gap-1.5">
+                  <Input
+                    disabled={!policy.canEditSensitive}
+                    placeholder="dd/mm/yyyy"
+                    value={editForm.endDate}
+                    onChange={(e) =>
+                      setEditForm((f) => ({
+                        ...f,
+                        endDate: formatDateInput(e.target.value),
+                      }))
+                    }
+                    maxLength={10}
+                    className="h-8"
+                  />
+                  <Input
+                    type="time"
+                    disabled={!policy.canEditSensitive}
+                    value={editForm.endTime}
+                    onChange={(e) =>
+                      setEditForm((f) => ({ ...f, endTime: e.target.value }))
+                    }
+                    className="h-8"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[11px] font-semibold text-muted-foreground">
+                  Khu vực / hạng vé
+                </p>
+                {allowAdd && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    onClick={addEditZone}
+                  >
+                    <Plus className="size-3" />
+                    Thêm khu
+                  </Button>
+                )}
+              </div>
+              {(lockPrice || lockDecrease) && (
+                <p className="text-[10px] text-muted-foreground">
+                  {[
+                    lockPrice ? "Không đổi giá vé đã có." : "",
+                    lockDecrease
+                      ? "Không giảm số ghế (được tăng)."
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                </p>
+              )}
+              {editZones.map((z, idx) => {
+                const lockedRow = lockZones && Boolean(z.eventZoneId);
+                const existing = Boolean(z.eventZoneId);
+                const minSeats = Math.max(
+                  1,
+                  z.soldTickets ?? 0,
+                  lockDecrease && existing ? (z.originalSeats ?? 1) : 0,
+                );
+                return (
+                  <div
+                    key={z.key}
+                    className="rounded-lg border border-border bg-muted/20 p-2.5"
+                  >
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-semibold text-muted-foreground">
+                        Khu #{idx + 1}
+                        {z.soldTickets ? ` · đã bán ${z.soldTickets}` : ""}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        disabled={
+                          editZones.length <= 1 ||
+                          (z.soldTickets ?? 0) > 0 ||
+                          (lockDecrease && existing) ||
+                          (lockZones && existing)
+                        }
+                        onClick={() => removeEditZone(z.key)}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                      <Input
+                        disabled={lockedRow}
+                        value={z.name}
+                        onChange={(e) =>
+                          updateEditZone(z.key, {
+                            name: e.target.value,
+                            zoneId: undefined,
+                          })
+                        }
+                        placeholder="Tên khu"
+                        className="h-8"
+                      />
+                      <Input
+                        type="number"
+                        disabled={lockedRow || (lockPrice && existing)}
+                        min={1}
+                        value={z.price}
+                        onChange={(e) =>
+                          updateEditZone(z.key, { price: e.target.value })
+                        }
+                        placeholder="Giá"
+                        className="h-8"
+                      />
+                      <Input
+                        type="number"
+                        disabled={lockedRow}
+                        min={minSeats}
+                        value={z.totalSeats}
+                        onChange={(e) =>
+                          updateEditZone(z.key, { totalSeats: e.target.value })
+                        }
+                        placeholder="Tổng ghế"
+                        className="h-8"
+                      />
+                      {z.hasSeats ? (
+                        <Input
+                          type="number"
+                          disabled={lockedRow}
+                          min={1}
+                          value={z.rowCount}
+                          onChange={(e) =>
+                            updateEditZone(z.key, { rowCount: e.target.value })
+                          }
+                          placeholder="Số hàng"
+                          className="h-8"
+                        />
+                      ) : (
+                        <div className="flex h-8 items-center rounded-lg border border-dashed border-border px-2 text-[11px] text-muted-foreground">
+                          Đứng / GA
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        disabled={lockedRow}
+                        onClick={() =>
+                          updateEditZone(z.key, {
+                            hasSeats: !z.hasSeats,
+                            rowCount: !z.hasSeats ? z.rowCount || "10" : "",
+                          })
+                        }
+                        className={cn(
+                          "flex h-8 items-center justify-center gap-1.5 rounded-lg border text-xs font-medium",
+                          z.hasSeats
+                            ? "border-primary/40 bg-primary/10 text-primary"
+                            : "border-border bg-input/30 text-muted-foreground",
+                          lockedRow && "cursor-not-allowed opacity-60",
+                        )}
+                      >
+                        {z.hasSeats ? (
+                          <>
+                            <Armchair className="size-3.5" /> Ghế
+                          </>
+                        ) : (
+                          <>
+                            <Users className="size-3.5" /> Đứng
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             <div className="grid grid-cols-3 gap-2 pt-0.5">
@@ -1560,14 +2041,9 @@ export default function EventPage() {
                 />
               </div>
             </div>
-
-            {!resolvePolicy(editing).canEditSensitive && (
-              <p className="text-[10px] leading-snug text-muted-foreground">
-                Đã khóa: địa điểm, zone/ghế, giá vé.
-              </p>
-            )}
           </div>
-        )}
+            );
+          })()}
       </Modal>
 
       <AdminConfirmModal modal={modal} setModal={setModal} />
