@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { Html5Qrcode } from "html5-qrcode";
 import { ticketApi, type QrPayload, type TicketDto } from "@/api/ticket.api";
 
 type ScanResult =
     | { ok: true; message: string; ticket: TicketDto }
     | { ok: false; message: string; ticket?: TicketDto };
 
-type BarcodeDetectorLike = {
-    detect: (source: ImageBitmapSource) => Promise<Array<{ rawValue: string }>>;
-};
+const SCANNER_ELEMENT_ID = "gate-qr-reader";
 
 export default function ScannerPage() {
     const [result, setResult] = useState<ScanResult | null>(null);
@@ -16,9 +15,11 @@ export default function ScannerPage() {
     const [cameraError, setCameraError] = useState<string | null>(null);
     const [cameraOn, setCameraOn] = useState(false);
     const [manual, setManual] = useState("");
-    const videoRef = useRef<HTMLVideoElement>(null);
     const lastRaw = useRef("");
     const verifying = useRef(false);
+    const handlePayloadRef = useRef<(raw: string) => Promise<void>>(
+        async () => {},
+    );
 
     const handlePayload = useCallback(async (raw: string) => {
         if (!raw || verifying.current) return;
@@ -65,69 +66,48 @@ export default function ScannerPage() {
         }
     }, []);
 
-    useEffect(() => {
-        const video = videoRef.current;
-        if (!video) return;
+    handlePayloadRef.current = handlePayload;
 
-        let stream: MediaStream | null = null;
-        let timer: number | undefined;
+    useEffect(() => {
         let cancelled = false;
+        let scanner: Html5Qrcode | null = null;
 
         const start = async () => {
             try {
-                stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        facingMode: { ideal: "environment" },
-                        width: { ideal: 1280 },
-                    },
-                    audio: false,
+                scanner = new Html5Qrcode(SCANNER_ELEMENT_ID, {
+                    verbose: false,
                 });
+
+                // Quét full khung — QR JSON dày dễ miss nếu chỉ quét ô nhỏ
+                await scanner.start(
+                    { facingMode: "environment" },
+                    {
+                        fps: 12,
+                        aspectRatio: 1.777778,
+                        disableFlip: false,
+                    },
+                    (decoded) => {
+                        void handlePayloadRef.current(decoded);
+                    },
+                    () => {
+                        /* frame miss — bình thường */
+                    },
+                );
+
                 if (cancelled) {
-                    stream.getTracks().forEach((t) => t.stop());
+                    await scanner.stop().catch(() => undefined);
+                    scanner.clear();
                     return;
                 }
-                video.srcObject = stream;
-                await video.play();
+
                 setCameraOn(true);
                 setCameraError(null);
-
-                const Detector = (
-                    window as unknown as {
-                        BarcodeDetector?: new (opts: {
-                            formats: string[];
-                        }) => BarcodeDetectorLike;
-                    }
-                ).BarcodeDetector;
-
-                if (!Detector) {
-                    setCameraError(
-                        "Trình duyệt này không đọc QR từ camera. Dùng Chrome/Edge, hoặc dán JSON QR bên phải.",
-                    );
-                    return;
-                }
-
-                const detector = new Detector({ formats: ["qr_code"] });
-                const tick = async () => {
-                    if (cancelled || video.readyState < 2) {
-                        timer = window.setTimeout(tick, 250);
-                        return;
-                    }
-                    try {
-                        const codes = await detector.detect(video);
-                        if (codes[0]?.rawValue) {
-                            void handlePayload(codes[0].rawValue);
-                        }
-                    } catch {
-                        /* frame skip */
-                    }
-                    timer = window.setTimeout(tick, 250);
-                };
-                void tick();
             } catch (err) {
                 console.error(err);
+                if (cancelled) return;
                 setCameraOn(false);
                 setCameraError(
-                    "Không mở được camera. Cho phép quyền camera trong trình duyệt, hoặc dán JSON QR bên phải.",
+                    "Không mở được camera. Cần HTTPS (hoặc localhost), cho phép quyền camera, rồi tải lại trang. Hoặc dán JSON QR bên phải.",
                 );
             }
         };
@@ -136,11 +116,24 @@ export default function ScannerPage() {
 
         return () => {
             cancelled = true;
-            if (timer) window.clearTimeout(timer);
-            stream?.getTracks().forEach((t) => t.stop());
-            if (video.srcObject) video.srcObject = null;
+            const s = scanner;
+            if (!s) return;
+            void (async () => {
+                try {
+                    if (s.isScanning) {
+                        await s.stop();
+                    }
+                } catch {
+                    /* already stopped */
+                }
+                try {
+                    s.clear();
+                } catch {
+                    /* ignore */
+                }
+            })();
         };
-    }, [handlePayload]);
+    }, []);
 
     const tone =
         result?.ok === true ? "ok" : result?.ok === false ? "bad" : "idle";
@@ -164,7 +157,7 @@ export default function ScannerPage() {
                         Trạm soát vé
                     </h1>
                     <p className="text-sm text-white/70">
-                        QR động · TTL 60 giây
+                        QR động · TTL 60 giây · hỗ trợ iPhone
                     </p>
                 </div>
                 {busy && (
@@ -176,12 +169,9 @@ export default function ScannerPage() {
 
             <main className="mx-auto grid max-w-5xl gap-6 px-4 pb-10 sm:grid-cols-2 sm:px-8">
                 <section className="overflow-hidden rounded-2xl bg-black/30 p-3 ring-1 ring-white/15">
-                    <video
-                        ref={videoRef}
-                        className="aspect-video w-full rounded-xl bg-black object-cover"
-                        playsInline
-                        muted
-                        autoPlay
+                    <div
+                        id={SCANNER_ELEMENT_ID}
+                        className="aspect-video w-full overflow-hidden rounded-xl bg-black [&_video]:h-full [&_video]:w-full [&_video]:object-cover"
                     />
                     {!cameraOn && !cameraError && (
                         <p className="mt-3 px-2 text-sm text-white/60">
