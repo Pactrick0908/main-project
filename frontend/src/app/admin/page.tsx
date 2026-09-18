@@ -227,7 +227,7 @@ export default function AdminDashboardPage() {
               T3
             </div>
             <div>
-              <h1 className="font-extrabold text-white text-lg tracking-wide">Ticket3</h1>
+              <h1 className="font-extrabold text-white text-lg tracking-wide">8Bits</h1>
               <div className="flex items-center text-xs text-purple-400 font-medium">
                 <Icons.SolanaLogo /> Admin Portal
               </div>

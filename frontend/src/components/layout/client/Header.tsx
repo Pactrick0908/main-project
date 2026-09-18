@@ -22,6 +22,7 @@ import {
   Calendar,
   ShoppingBag,
 } from "lucide-react";
+import logoUrl from "@/assets/logo.svg";
 
 interface NavLink {
   name: string;
@@ -100,11 +101,13 @@ export default function Header() {
     <header className="sticky top-0 z-50 w-full border-b border-zinc-800/70 bg-[#090A0F]/95 backdrop-blur-md">
       <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4 sm:px-6 lg:px-8">
         <Link to="/" className="flex shrink-0 items-center gap-2.5 group">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-700/80 bg-zinc-900 text-[#F97316] transition-colors group-hover:border-[#F97316]/40">
-            <Ticket className="h-3.5 w-3.5 -rotate-12" />
-          </div>
+          <img
+            src={logoUrl}
+            alt="8Bits Ticket"
+            className="h-7 w-7 rounded-lg border border-zinc-700/80 transition-colors group-hover:border-[#F97316]/40"
+          />
           <span className="text-sm font-bold tracking-tight text-white">
-            TicketFest
+            8Bits Ticket
           </span>
           <span className="hidden sm:flex items-center gap-1 text-[10px] text-zinc-500 font-medium">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
@@ -257,8 +260,8 @@ export default function Header() {
             >
               <SheetHeader className="border-b border-zinc-800 px-4 py-3">
                 <SheetTitle className="flex items-center gap-2 text-sm font-bold text-white">
-                  <Ticket className="h-4 w-4 text-[#F97316]" />
-                  TicketFest
+                  <img src={logoUrl} alt="" className="h-5 w-5 rounded-md" />
+                  8Bits Ticket
                 </SheetTitle>
               </SheetHeader>
 

@@ -5,6 +5,7 @@ import GoogleLoginButton from "@/pages/auth/GoogleLoginButton";
 import { authApi } from "@/api/auth.api";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "@/lib/toast";
+import logoUrl from "@/assets/logo.svg";
 
 const FEATURES = [
   {
@@ -56,12 +57,14 @@ function LoginPage() {
         <div className="mb-8 flex flex-col items-center text-center">
           <div className="relative mb-4">
             <div className="absolute inset-0 rounded-2xl bg-[#F97316]/30 blur-xl" />
-            <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-[#F97316]/30 bg-zinc-900">
-              <Ticket className="h-8 w-8 text-[#F97316]" />
-            </div>
+            <img
+              src={logoUrl}
+              alt="8Bits Ticket"
+              className="relative h-16 w-16 rounded-2xl border border-[#F97316]/30"
+            />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-white">
-            TicketFest
+            8Bits Ticket
           </h1>
           <p className="mt-1.5 text-sm text-zinc-400">
             Đăng nhập để xem vé &amp; nhận mã QR check-in

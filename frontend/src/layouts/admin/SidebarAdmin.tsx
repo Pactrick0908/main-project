@@ -7,7 +7,6 @@ import {
   Ticket,
   ScanLine,
   ExternalLink,
-  Hexagon,
   Gift,
   LogIn,
   MapPin,
@@ -21,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
 import { authApi } from "@/api/auth.api";
 import { toast } from "@/lib/toast";
+import logoUrl from "@/assets/logo.svg";
 
 const PROGRAM_ID = "GGadYLQQ5S2r26ajUHEiy7v2NMKN41rJXETb395kbq1H";
 
@@ -73,12 +73,12 @@ export default function SidebarAdmin() {
   return (
     <aside className="sticky top-0 flex h-screen w-48 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
       <div className="flex items-center gap-2 border-b border-sidebar-border px-3 py-3">
-        <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-          <Hexagon className="size-3.5" strokeWidth={2.25} />
+        <div className="flex size-7 items-center justify-center overflow-hidden rounded-md">
+          <img src={logoUrl} alt="8Bits" className="size-7" />
         </div>
         <div className="min-w-0">
           <p className="truncate text-xs font-semibold tracking-tight">
-            Ticket3
+            8Bits
           </p>
           <p className="text-[9px] font-medium uppercase tracking-wider text-primary">
             Ops · Devnet

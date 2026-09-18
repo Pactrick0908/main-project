@@ -49,7 +49,7 @@ export default function StarsSection() {
             <div>
               <h2 className="text-xl font-bold text-white">Ngôi sao</h2>
               <p className="text-xs text-zinc-500">
-                Nghệ sĩ nổi bật đang có sự kiện trên TicketFest
+                Nghệ sĩ nổi bật đang có sự kiện trên 8Bits Ticket
               </p>
             </div>
           </div>

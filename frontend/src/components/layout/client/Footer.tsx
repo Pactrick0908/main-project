@@ -1,5 +1,6 @@
 import { Phone, Mail, MapPin, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
+import logoUrl from "@/assets/logo.svg";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -189,7 +190,7 @@ export default function Footer() {
               {/* APP BADGES */}
               <div className="border-t border-slate-700/50 pt-5">
                 <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-300">
-                  Ứng dụng TicketFest
+                  Ứng dụng 8Bits Ticket
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <AppBadge store="google" />
@@ -325,19 +326,19 @@ export default function Footer() {
             {/* LEFT: LOGO + COPYRIGHT */}
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#F97316]">
-                  <svg viewBox="0 0 24 24" fill="white" className="h-4 w-4">
-                    <path d="M20 12v-2h-2V8a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2h2v-2zm-4 4H4V8h12v8zM22 9h-2v6h2V9z" />
-                  </svg>
-                </div>
+                <img
+                  src={logoUrl}
+                  alt="8Bits Ticket"
+                  className="h-8 w-8 rounded-lg"
+                />
                 <span className="text-base font-bold tracking-tight text-white">
-                  TicketFest
+                  8Bits Ticket
                 </span>
               </div>
               <p className="max-w-[200px] text-[11px] leading-relaxed text-slate-500">
                 Nền tảng mua bán và trao đổi vé sự kiện uy tín tại Việt Nam.
               </p>
-              <p className="text-[11px] text-slate-600">© 2026 TicketFest</p>
+              <p className="text-[11px] text-slate-600">© 2026 8Bits Ticket</p>
             </div>
 
             {/* CENTER: LEGAL INFO */}
